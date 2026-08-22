@@ -1,4 +1,4 @@
-import { AuditEvent, AuditEventType } from './audit.types';
+import { AuditEvent } from './audit.types';
 import { AuditSink } from './audit.sink';
 import { PostgresAuditSink, sanitizeMetadata } from './postgres-audit-sink';
 import { Database } from '../../infrastructure/database/pool';

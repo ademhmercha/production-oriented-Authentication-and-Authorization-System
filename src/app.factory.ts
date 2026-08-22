@@ -35,6 +35,14 @@ import { createAuthRoutes } from './modules/auth/auth.routes';
 import { createMfaRoutes } from './modules/mfa/mfa.routes';
 import { RbacRepository } from './modules/roles/rbac.repository';
 import { createAdminRoutes } from './modules/roles/admin.routes';
+import { ClientRepository } from './modules/clients/client.repository';
+import { createClientsRoutes } from './modules/clients/clients.routes';
+import { AuthorizationCodeRepository } from './modules/oauth/authorization-code.repository';
+import { OAuthService } from './modules/oauth/oauth.service';
+import { TokenRevocationService } from './modules/tokens/token-revocation';
+import { createOAuthRoutes } from './modules/oauth/oauth.routes';
+import { createOidcRoutes } from './modules/oauth/oidc.routes';
+import { createDiscoveryRoutes } from './modules/oauth/discovery.routes';
 
 export interface Services {
   db: Database;
@@ -120,7 +128,9 @@ export function createAuthServer(deps: AuthServerDeps): Express {
   );
 
   app.use(requestIdMiddleware());
+  // JSON for API endpoints + urlencoded for OAuth2 form posts (RFC 6749 §4.1.3).
   app.use(express.json({ limit: '100kb' }));
+  app.use(express.urlencoded({ extended: false, limit: '100kb' }));
   app.use(cookieParser());
 
   // Public key material for JWT verification (JWKS).
@@ -133,6 +143,32 @@ export function createAuthServer(deps: AuthServerDeps): Express {
   // Admin RBAC + user management (permission-guarded).
   const rbac = new RbacRepository(services.db);
   app.use('/admin', createAdminRoutes(rbac, services.audit, services.jwt));
+
+  // OAuth2 client administration.
+  const clientsRepo = new ClientRepository(services.db);
+  app.use('/admin/clients', createClientsRoutes(clientsRepo, services.audit, services.jwt));
+
+  // OAuth2 protocol endpoints.
+  const codes = new AuthorizationCodeRepository(services.db);
+  const tokenRevocation = new TokenRevocationService(services.redis);
+  services.jwt.setRevocationChecker((jti) => tokenRevocation.isRevoked(jti));
+  const oauth = new OAuthService(
+    clientsRepo,
+    codes,
+    services.jwt,
+    new RefreshTokenService(services.db),
+    new SessionRepository(services.db, services.redis),
+    services.users,
+    services.audit,
+    tokenRevocation,
+  );
+  app.use('/oauth', createOAuthRoutes(oauth, services.jwt, clientsRepo, services.audit, services.redis));
+
+  // OIDC discovery + userinfo.
+  app.use(createDiscoveryRoutes());
+  app.use(createOidcRoutes(services.users, services.jwt));
+
+  return app;
 
   app.use('/health', createHealthRouter({
     readinessChecks: {

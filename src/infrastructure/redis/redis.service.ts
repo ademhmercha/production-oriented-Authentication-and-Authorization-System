@@ -100,8 +100,9 @@ export class RedisService {
 }
 
 function loadRedisUrl(): string {
-  // Imported lazily to avoid config load in unit tests that don't need it.
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  // Loaded lazily so unit tests that import this module don't force config
+  // validation; the URL is only read when a client is actually created.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { loadConfig } = require('../../config') as typeof import('../../config');
   return loadConfig().REDIS_URL;
 }

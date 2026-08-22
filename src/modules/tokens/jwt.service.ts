@@ -6,7 +6,6 @@ import {
   importSPKI,
 } from 'jose';
 import type { JWTPayload } from 'jose';
-import { randomUUID } from 'node:crypto';
 import { KeyManagementService, KmsError } from '../keys/kms.types';
 import { AppError, AuthError } from '../../common/errors';
 
@@ -47,10 +46,20 @@ export interface JwtServiceOptions {
 }
 
 export class JwtService {
+  private revocationChecker?: (jti: string) => Promise<boolean>;
+
   constructor(
     private readonly kms: KeyManagementService,
     private readonly options: JwtServiceOptions,
   ) {}
+
+  /**
+   * Optional denylist hook (Redis-backed in production): when set, tokens
+   * whose jti was explicitly revoked are rejected even before expiry.
+   */
+  setRevocationChecker(checker: (jti: string) => Promise<boolean>): void {
+    this.revocationChecker = checker;
+  }
 
   async signAccessToken(input: AccessTokenInput, ttlOverrideSeconds?: number): Promise<{
     token: string;
@@ -116,23 +125,33 @@ export class JwtService {
         clockTolerance: 5,
         requiredClaims: ['iss', 'sub', 'aud', 'exp', 'iat', 'jti'],
       });
+      if (payload.jti && this.revocationChecker && (await this.revocationChecker(payload.jti))) {
+        throw new AuthError('Token has been revoked', 'TOKEN_REVOKED');
+      }
       return payload as AccessTokenPayload;
     } catch (err) {
       throw mapJoseError(err);
     }
   }
 
-  /** ID token for OIDC flows (stage: oauth). Same signing path. */
-  async signIdToken(claims: Record<string, unknown>, ttlSeconds: number): Promise<string> {
+  /** ID token for OIDC flows: aud = client_id, sub = user id, plus extra claims. */
+  async signIdToken(
+    extraClaims: Record<string, unknown>,
+    audience: string,
+    subject: string,
+    ttlSeconds: number,
+  ): Promise<string> {
     const { kid, privateKeyPem } = await this.kms.getCurrentSigningKey();
     const key = await importPKCS8(privateKeyPem, 'EdDSA');
     const now = Math.floor(Date.now() / 1000);
-    return new SignJWT(claims)
+    return new SignJWT({ ...extraClaims })
       .setProtectedHeader({ alg: 'EdDSA', kid, typ: 'JWT' })
+      .setIssuer(this.options.issuer)
+      .setAudience(audience)
+      .setSubject(subject)
       .setIssuedAt(now)
       .setNotBefore(now)
       .setExpirationTime(now + ttlSeconds)
-      .setIssuer(this.options.issuer)
       .sign(key);
   }
 }
