@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+coverage/
+
+# Environment - never commit real secrets
+.env
+.env.local
+.env.*.local
+
+# Local development signing keys (never commit private keys)
+keys/
+*.pem
+*.key
+
+# Logs
+logs/
+*.log
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Test artifacts
+test-results.xml
