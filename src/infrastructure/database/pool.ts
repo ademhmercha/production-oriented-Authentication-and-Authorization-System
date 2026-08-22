@@ -53,6 +53,11 @@ export class Database {
     await this.pool.query('SELECT 1');
   }
 
+  /** Acquires a raw client (caller must release). */
+  withClient(): Promise<PoolClient> {
+    return this.pool.connect();
+  }
+
   async close(): Promise<void> {
     await this.pool.end();
   }
