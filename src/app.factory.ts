@@ -33,6 +33,8 @@ import { RulesRiskEngine } from './modules/risk/rules-risk.engine';
 import { RiskEventRepository } from './modules/risk/risk-event.repository';
 import { createAuthRoutes } from './modules/auth/auth.routes';
 import { createMfaRoutes } from './modules/mfa/mfa.routes';
+import { RbacRepository } from './modules/roles/rbac.repository';
+import { createAdminRoutes } from './modules/roles/admin.routes';
 
 export interface Services {
   db: Database;
@@ -127,6 +129,10 @@ export function createAuthServer(deps: AuthServerDeps): Express {
   // Authentication + MFA endpoints.
   app.use('/auth', createAuthRoutes(services.authService, services.userService, services.jwt, services.redis));
   app.use('/mfa', createMfaRoutes(services.mfa, services.audit, services.jwt, services.authService));
+
+  // Admin RBAC + user management (permission-guarded).
+  const rbac = new RbacRepository(services.db);
+  app.use('/admin', createAdminRoutes(rbac, services.audit, services.jwt));
 
   app.use('/health', createHealthRouter({
     readinessChecks: {

@@ -6,6 +6,7 @@ export interface AuthenticatedUser {
   sub: string;
   scope: string;
   roles?: string[];
+  permissions?: string[];
   sid?: string;
   client_id?: string;
   jti: string;
@@ -34,6 +35,7 @@ export function authenticate(jwtService: JwtService): RequestHandler {
         sub: payload.sub,
         scope: payload.scope ?? '',
         roles: payload.roles,
+        permissions: payload.permissions,
         sid: payload.sid,
         client_id: payload.client_id,
         jti: payload.jti ?? '',

@@ -222,11 +222,13 @@ export class AuthService {
       }
 
       const roles = await this.users.rolesOf(row.user_id);
+      const permissions = await this.users.permissionsOf(row.user_id);
       const amr = session.mfa_passed ? ['pwd', 'mfa'] : ['pwd'];
       const signed = await this.jwt.signAccessToken({
         sub: row.user_id,
         scope: row.scope,
         roles,
+        permissions,
         sid: session.id,
         client_id: row.client_id ?? undefined,
         amr,
@@ -418,12 +420,14 @@ export class AuthService {
     if (!user) throw new AuthError('User not found', 'USER_NOT_FOUND');
 
     const roles = await this.users.rolesOf(userId);
+    const permissions = await this.users.permissionsOf(userId);
     const scope = defaultScopeForRoles(roles);
 
     const signed = await this.jwt.signAccessToken({
       sub: userId,
       scope,
       roles,
+      permissions,
       sid: sessionId,
       amr,
     });

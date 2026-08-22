@@ -16,7 +16,7 @@ export function requirePermission(...permissions: string[]): RequestHandler {
       next(new ForbiddenError('Authentication required'));
       return;
     }
-    const granted = new Set<string>([...(user.roles ?? []), ...tokenPermissions(user)]);
+    const granted = new Set<string>([...(user.permissions ?? []), ...tokenPermissions(user)]);
     const ok = permissions.every((p) => granted.has(p));
     if (!ok) {
       next(new ForbiddenError(`Missing required permission(s): ${permissions.join(', ')}`, 'MISSING_PERMISSION'));

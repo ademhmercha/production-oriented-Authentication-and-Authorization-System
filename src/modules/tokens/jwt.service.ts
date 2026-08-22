@@ -23,6 +23,8 @@ export interface AccessTokenInput {
   sub: string;
   scope: string;
   roles?: string[];
+  /** Expanded RBAC permissions (from roles) embedded for stateless checks. */
+  permissions?: string[];
   sid?: string;
   client_id?: string;
   amr?: string[];
@@ -32,6 +34,7 @@ export interface AccessTokenPayload extends JWTPayload {
   sub: string;
   scope: string;
   roles?: string[];
+  permissions?: string[];
   sid?: string;
   client_id?: string;
   amr?: string[];
@@ -65,6 +68,7 @@ export class JwtService {
     const token = await new SignJWT({
       scope: input.scope,
       ...(input.roles?.length ? { roles: input.roles } : {}),
+      ...(input.permissions?.length ? { permissions: input.permissions } : {}),
       ...(input.sid ? { sid: input.sid } : {}),
       ...(input.client_id ? { client_id: input.client_id } : {}),
       ...(input.amr ? { amr: input.amr } : {}),
