@@ -4,10 +4,24 @@
 import { loadConfig } from '../../config';
 import { logger } from '../../common/logger';
 import { createAuthServer, finalizeApp } from '../../app.factory';
+import { LocalKeyProvider } from '../../modules/keys/local-key-provider';
 
 async function main(): Promise<void> {
   const config = loadConfig();
-  const app = createAuthServer();
+
+  const kms = new LocalKeyProvider(config.KMS_KEY_DIR);
+  // Ensure a signing key exists at startup.
+  const signing = await kms.getCurrentSigningKey();
+  logger.info({ kid: signing.kid }, 'Signing key loaded');
+
+  const app = createAuthServer({
+    kms,
+    readinessChecks: {
+      kms: async () => {
+        await kms.getCurrentSigningKey();
+      },
+    },
+  });
   finalizeApp(app);
 
   const server = app.listen(config.PORT, () => {

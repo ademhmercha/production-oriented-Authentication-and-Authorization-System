@@ -3,7 +3,7 @@ module.exports = {
   preset: 'ts-jest',
   testEnvironment: 'node',
   roots: ['<rootDir>/tests'],
-  setupFiles: ['dotenv/config'],
+  setupFiles: ['dotenv/config', '<rootDir>/tests/helpers/setup-env.ts'],
   moduleNameMapper: {
     '^@test/(.*)$': '<rootDir>/tests/helpers/$1',
   },

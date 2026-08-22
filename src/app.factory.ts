@@ -15,12 +15,15 @@ import { logger } from './common/logger';
 import { requestIdMiddleware } from './common/middleware/request-id';
 import { errorHandler, notFoundHandler } from './common/middleware/error-handler';
 import { createHealthRouter } from './modules/health/health.routes';
+import { KeyManagementService } from './modules/keys/kms.types';
+import { createKeysRoutes } from './modules/keys/keys.routes';
 
 export interface AuthServerDeps {
+  kms: KeyManagementService;
   readinessChecks?: Record<string, () => Promise<void>>;
 }
 
-export function createAuthServer(deps: AuthServerDeps = {}): Express {
+export function createAuthServer(deps: AuthServerDeps): Express {
   const config = loadConfig();
 
   const app = express();
@@ -40,6 +43,9 @@ export function createAuthServer(deps: AuthServerDeps = {}): Express {
   app.use(requestIdMiddleware());
   app.use(express.json({ limit: '100kb' }));
   app.use(cookieParser());
+
+  // Public key material for JWT verification (JWKS).
+  app.use(createKeysRoutes(deps.kms));
 
   app.use('/health', createHealthRouter({ readinessChecks: deps.readinessChecks }));
 
