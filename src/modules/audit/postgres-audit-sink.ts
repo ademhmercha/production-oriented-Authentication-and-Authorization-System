@@ -1,5 +1,6 @@
 import { PoolClient } from 'pg';
 import { AuditSink } from './audit.sink';
+import { AuditEvent } from './audit.types';
 import { logger } from '../../common/logger';
 
 /**
