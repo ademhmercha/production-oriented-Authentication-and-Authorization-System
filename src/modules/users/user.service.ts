@@ -66,6 +66,8 @@ export class UserService {
       firstName: input.first_name ?? null,
       lastName: input.last_name ?? null,
     });
+    // Every self-registered user gets the implicit end-user role.
+    await this.users.addRole(user.id, 'user');
 
     await this.audit.record({
       event_type: AuditEventType.USER_REGISTERED,

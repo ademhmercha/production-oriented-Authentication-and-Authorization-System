@@ -24,16 +24,26 @@ import { EmailProvider } from './modules/email/email.types';
 import { UserRepository } from './modules/users/user.repository';
 import { EmailTokenService } from './modules/users/email-token.service';
 import { UserService } from './modules/users/user.service';
+import { AuthService } from './modules/auth/auth.service';
+import { JwtService } from './modules/tokens/jwt.service';
+import { RefreshTokenService } from './modules/tokens/refresh-token.service';
+import { SessionRepository } from './modules/sessions/session.repository';
+import { MfaService } from './modules/mfa/mfa.service';
+import { RulesRiskEngine } from './modules/risk/rules-risk.engine';
+import { RiskEventRepository } from './modules/risk/risk-event.repository';
 import { createAuthRoutes } from './modules/auth/auth.routes';
+import { createMfaRoutes } from './modules/mfa/mfa.routes';
 
-/** Fully wired service graph (grows with each module). */
 export interface Services {
   db: Database;
   redis: RedisService;
   kms: KeyManagementService;
   audit: AuditLogService;
+  jwt: JwtService;
   users: UserRepository;
   userService: UserService;
+  authService: AuthService;
+  mfa: MfaService;
 }
 
 export interface AuthServerDeps {
@@ -46,33 +56,62 @@ export interface AuthServerDeps {
 }
 
 export function buildServices(deps: AuthServerDeps): Services {
+  const config = loadConfig();
+
   const audit = deps.audit ?? AuditLogService.withDefaults(deps.db);
   const users = new UserRepository(deps.db);
   const emailTokens = new EmailTokenService(deps.db);
   const userService = new UserService(users, emailTokens, audit, deps.email);
+
+  const jwt = new JwtService(deps.kms, {
+    issuer: config.JWT_ISSUER,
+    audience: config.JWT_AUDIENCE,
+    defaultTtlSeconds: config.ACCESS_TOKEN_TTL,
+  });
+  const refreshTokens = new RefreshTokenService(deps.db);
+  const sessions = new SessionRepository(deps.db, deps.redis);
+  const mfa = new MfaService(deps.db, deps.kms, deps.redis);
+  const riskEngine = new RulesRiskEngine(deps.redis);
+  const riskEvents = new RiskEventRepository(deps.db);
+
+  const authService = new AuthService(
+    users,
+    sessions,
+    refreshTokens,
+    jwt,
+    mfa,
+    riskEngine,
+    riskEvents,
+    audit,
+    emailTokens,
+    deps.email,
+    deps.redis,
+  );
+
   return {
     db: deps.db,
     redis: deps.redis,
     kms: deps.kms,
     audit,
+    jwt,
     users,
     userService,
+    authService,
+    mfa,
   };
 }
 
 export function createAuthServer(deps: AuthServerDeps): Express {
-  const config = loadConfig();
   const services = buildServices(deps);
-
   const app = express();
   app.disable('x-powered-by');
-  if (config.TRUST_PROXY) app.set('trust proxy', 1);
+  app.set('trust proxy', 1);
 
   // Security headers (helmet) + strict CORS allow-list.
   app.use(helmet());
   app.use(
     cors({
-      origin: config.corsOriginsList,
+      origin: loadConfig().corsOriginsList,
       credentials: true,
       methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     }),
@@ -85,8 +124,9 @@ export function createAuthServer(deps: AuthServerDeps): Express {
   // Public key material for JWT verification (JWKS).
   app.use(createKeysRoutes(services.kms));
 
-  // Authentication endpoints.
-  app.use('/auth', createAuthRoutes(services.userService));
+  // Authentication + MFA endpoints.
+  app.use('/auth', createAuthRoutes(services.authService, services.userService, services.jwt, services.redis));
+  app.use('/mfa', createMfaRoutes(services.mfa, services.audit, services.jwt, services.authService));
 
   app.use('/health', createHealthRouter({
     readinessChecks: {

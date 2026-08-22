@@ -72,6 +72,19 @@ export class RedisService {
     return count;
   }
 
+  // ---- Set operations (risk engine: distinct-IP tracking) ----
+  async setAdd(key: string, member: string): Promise<void> {
+    await this.client.sadd(key, member);
+  }
+
+  async setSize(key: string): Promise<number> {
+    return this.client.scard(key);
+  }
+
+  async setExpire(key: string, ttlSeconds: number): Promise<void> {
+    await this.client.expire(key, ttlSeconds);
+  }
+
   async ttl(key: string): Promise<number> {
     return this.client.ttl(key);
   }

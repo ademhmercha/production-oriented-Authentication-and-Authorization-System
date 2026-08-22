@@ -14,6 +14,7 @@ import { setEmailProvider } from '../../src/modules/email/email.factory';
 import { createAuthServer, finalizeApp } from '../../src/app.factory';
 
 process.env.NODE_ENV = 'test';
+process.env.RATE_LIMIT_REGISTER = '50';
 resetConfigCache();
 
 describe('POST /auth/register + POST /auth/verify-email', () => {

@@ -119,6 +119,16 @@ export class UserRepository {
     return result.rows.map((r) => r.name);
   }
 
+  /** Grants a system role by name (used for the implicit 'user' role). */
+  async addRole(userId: string, roleName: string): Promise<void> {
+    await this.db.query(
+      `INSERT INTO user_roles (user_id, role_id)
+       SELECT $1, id FROM roles WHERE name = $2
+       ON CONFLICT DO NOTHING`,
+      [userId, roleName],
+    );
+  }
+
   async permissionsOf(userId: string): Promise<string[]> {
     const result = await this.db.query<{ name: string }>(
       `SELECT DISTINCT p.name FROM permissions p
