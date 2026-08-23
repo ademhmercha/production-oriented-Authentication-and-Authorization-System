@@ -1,0 +1,9 @@
+node_modules
+dist
+coverage
+keys
+.git
+.env
+*.md
+tests
+tmp-*
