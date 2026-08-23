@@ -109,6 +109,10 @@ export function createGatewayApp(deps: GatewayDeps): Express {
           if (creq.user.client_id) proxyReq.setHeader('X-Client-Id', creq.user.client_id);
         }
         if (creq.id) proxyReq.setHeader('X-Request-Id', String(creq.id));
+        // Proof-of-origin for the zero-trust resource API.
+        if (config.GATEWAY_SHARED_SECRET) {
+          proxyReq.setHeader('X-Internal-Secret', config.GATEWAY_SHARED_SECRET);
+        }
         fixRequestBody(proxyReq, req);
       },
       error: (err, _req, res) => {

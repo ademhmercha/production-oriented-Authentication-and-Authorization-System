@@ -94,6 +94,9 @@ const envSchema = z.object({
   // ---- Service topology (used by gateway + e2e) ----
   AUTH_SERVER_URL: z.string().url().default('http://localhost:3001'),
   RESOURCE_API_URL: z.string().url().default('http://localhost:3002'),
+  RESOURCE_PORT: int(3002),
+  // Shared secret proving requests reached the resource API via the gateway.
+  GATEWAY_SHARED_SECRET: z.string().optional(),
 
   // ---- Bootstrap admin (seed only) ----
   ADMIN_EMAIL: z.string().email().default('admin@auth.local'),
