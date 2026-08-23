@@ -168,8 +168,7 @@ export function createAuthServer(deps: AuthServerDeps): Express {
   app.use(createDiscoveryRoutes());
   app.use(createOidcRoutes(services.users, services.jwt));
 
-  return app;
-
+  // Health/readiness probes (liveness + dependency checks).
   app.use('/health', createHealthRouter({
     readinessChecks: {
       postgres: () => services.db.ping(),

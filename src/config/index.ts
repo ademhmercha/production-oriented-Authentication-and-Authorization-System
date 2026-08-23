@@ -27,6 +27,7 @@ const envSchema = z.object({
   // ---- Runtime ----
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: int(3001),
+  GATEWAY_PORT: int(3000),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
 
   // ---- Persistence ----
