@@ -6,7 +6,6 @@ on:
       - main
   pull_request:
 
-# One pipeline per branch/PR - superseded runs are cancelled.
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
