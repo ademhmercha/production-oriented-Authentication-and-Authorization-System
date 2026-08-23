@@ -39,13 +39,14 @@ export function createResourceApiApp(deps: ResourceApiDeps): Express {
   app.use(requestIdMiddleware());
   app.use(express.json({ limit: '100kb' }));
 
-  // Proof the request came through the gateway (shared secret).
-  app.use(requireGatewaySecret());
-
-  // Liveness + readiness.
+  // Liveness + readiness BEFORE the origin check: orchestrators and
+  // load balancers probe health directly, not through the gateway.
   app.get('/health', async (_req, res) => {
     res.json({ status: 'ok', service: 'resource-api' });
   });
+
+  // Proof the request came through the gateway (shared secret).
+  app.use(requireGatewaySecret());
 
   app.use('/api/v1', createDocumentsRoutes(new DocumentRepository(deps.db)));
 

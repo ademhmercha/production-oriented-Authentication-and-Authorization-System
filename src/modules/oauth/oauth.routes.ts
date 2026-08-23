@@ -1,9 +1,10 @@
-import { Router, raw } from 'express';
+﻿import { Router, raw } from 'express';
 import { OAuthService } from './oauth.service';
 import { JwtService } from '../tokens/jwt.service';
 import { ClientRepository } from '../clients/client.repository';
 import { AuditLogService } from '../audit/audit.service';
 import { maybeAuthenticate } from '../../common/guards/authenticate';
+import { AppError } from '../../common/errors';
 import { validate } from '../../common/validation/validate';
 import { asyncHandler } from '../../common/decorators/async-handler';
 import { requestContext } from '../../common/decorators/request-context';
@@ -109,6 +110,15 @@ export function createOAuthRoutes(
     return {};
   }
 
+  /** RFC 6749 Â§5.2: malformed token-endpoint input is 400, never a 500. */
+  function parseForm<T>(schema: { safeParse: (data: unknown) => { success: true; data: T } | { success: false; error: { issues: unknown[] } } }, req: Request): T {
+    const result = schema.safeParse(parseFormBody(req));
+    if (!result.success) {
+      throw new AppError(400, 'INVALID_REQUEST', 'Malformed form body');
+    }
+    return result.data;
+  }
+
   router.post(
     '/token',
     rateLimitMiddleware(redis, {
@@ -118,7 +128,7 @@ export function createOAuthRoutes(
       keyResolver: (req) => parseBasicAuth(req)?.clientId ?? req.ip ?? 'unknown',
     }),
     asyncHandler(async (req, res) => {
-      const form = tokenFormSchema.parse(parseFormBody(req));
+      const form = parseForm(tokenFormSchema, req);
       const basic = parseBasicAuth(req);
       const result = await oauth.token(form, basic, requestContext(req));
       res.setHeader('Cache-Control', 'no-store');
@@ -130,9 +140,9 @@ export function createOAuthRoutes(
   router.post(
     '/introspect',
     asyncHandler(async (req, res) => {
-      const form = introspectFormSchema.parse(parseFormBody(req));
+      const form = parseForm(introspectFormSchema, req);
       const basic = parseBasicAuth(req);
-      // RFC 7662 §2.1: introspection requires an authenticated caller.
+      // RFC 7662 Â§2.1: introspection requires an authenticated caller.
       if (!basic) {
         res.status(401).json({ error: 'invalid_client', error_description: 'Client authentication required' });
         return;
@@ -155,7 +165,7 @@ export function createOAuthRoutes(
   router.post(
     '/revoke',
     asyncHandler(async (req, res) => {
-      const form = revokeFormSchema.parse(parseFormBody(req));
+      const form = parseForm(revokeFormSchema, req);
       await oauth.revoke(form.token, requestContext(req));
       res.status(200).json({ revoked: true });
     }),

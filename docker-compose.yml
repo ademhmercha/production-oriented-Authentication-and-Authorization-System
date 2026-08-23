@@ -1,4 +1,4 @@
-name: identity-platform
+﻿name: identity-platform
 
 x-common-env: &common-env
   NODE_ENV: production
@@ -15,6 +15,12 @@ x-common-env: &common-env
   RESOURCE_API_URL: http://resource-api:3002
   GATEWAY_SHARED_SECRET: ${GATEWAY_SHARED_SECRET:-}
   CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:8080}
+  # Sane defaults for a single-node deployment; tighten per-environment.
+  RATE_LIMIT_REGISTER: '100'
+  RATE_LIMIT_LOGIN: '60'
+  RATE_LIMIT_TOKEN: '120'
+  RATE_LIMIT_AUTHORIZE: '50'
+  RATE_LIMIT_FORGOT_PASSWORD: '30'
   EMAIL_PROVIDER: smtp
   SMTP_HOST: mailhog
   SMTP_PORT: '1025'

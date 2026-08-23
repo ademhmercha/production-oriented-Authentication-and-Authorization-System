@@ -12,13 +12,14 @@ export const authorizeQuerySchema = z.object({
 });
 
 export const tokenFormSchema = z.object({
-  grant_type: z.enum(['authorization_code', 'client_credentials']),
+  grant_type: z.enum(['authorization_code', 'client_credentials', 'refresh_token']),
   code: z.string().optional(),
   redirect_uri: z.string().optional(),
   client_id: z.string().optional(),
   client_secret: z.string().optional(),
   code_verifier: z.string().min(43).max(128).optional(),
   scope: z.string().optional(),
+  refresh_token: z.string().min(10).optional(),
 });
 
 export const introspectFormSchema = z.object({

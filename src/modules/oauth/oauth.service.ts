@@ -12,7 +12,7 @@ import { AuditLogService } from '../audit/audit.service';
 import { AuditEventType } from '../audit/audit.types';
 import { RequestContext } from '../../common/decorators/request-context';
 import { loadConfig } from '../../config';
-import { AppError, ForbiddenError } from '../../common/errors';
+import { AppError, AuthError, ForbiddenError } from '../../common/errors';
 
 /** RFC 6749 §5.2 error responses use a specific envelope. */
 export class OAuthTokenError extends AppError {
@@ -153,13 +153,14 @@ export class OAuthService {
 
   async token(
     form: {
-      grant_type: 'authorization_code' | 'client_credentials';
+      grant_type: 'authorization_code' | 'client_credentials' | 'refresh_token';
       code?: string;
       redirect_uri?: string;
       client_id?: string;
       client_secret?: string;
       code_verifier?: string;
       scope?: string;
+      refresh_token?: string;
     },
     basicAuth: { clientId: string; clientSecret: string } | null,
     ctx: RequestContext,
@@ -245,6 +246,97 @@ export class OAuthService {
       }
 
       return this.issueUserTokens(codeRow.user_id, client, codeRow.scope, codeRow.nonce, ctx);
+    }
+
+    // ---- refresh_token (RFC 6749 §6) with rotation + theft detection ----
+    if (form.grant_type === 'refresh_token') {
+      if (!form.refresh_token) {
+        throw new OAuthTokenError(400, 'invalid_request', 'refresh_token is required');
+      }
+      if (client.client_type === 'confidential') {
+        if (!presentedSecret || !(await this.clients.verifySecret(client, presentedSecret))) {
+          await this.recordClientAuthFailure(client.id, ctx);
+          throw new OAuthTokenError(401, 'invalid_client', 'Invalid client credentials');
+        }
+      } else if (presentedSecret) {
+        throw new OAuthTokenError(400, 'invalid_request', 'Public clients must not authenticate');
+      }
+
+      let consumed;
+      try {
+        consumed = await this.refreshTokens.consume(form.refresh_token);
+      } catch (err) {
+        if (err instanceof AuthError && err.code === 'REFRESH_TOKEN_REUSE') {
+          await this.audit.record({
+            event_type: AuditEventType.REFRESH_TOKEN_REUSE_DETECTED,
+            ip: ctx.ip,
+            request_id: ctx.requestId,
+            metadata: { kind: 'oauth_refresh_reuse', client_id: client.client_id },
+          });
+          throw new OAuthTokenError(401, 'invalid_grant',
+            'Refresh token reuse detected - chain revoked');
+        }
+        if (err instanceof AuthError && err.code === 'INVALID_REFRESH_TOKEN') {
+          throw new OAuthTokenError(401, 'invalid_grant', 'Invalid or expired refresh token');
+        }
+        throw err;
+      }
+      const { row, nextToken } = consumed;
+
+      // Client binding: a refresh token may only be used by its own client.
+      if (row.client_id !== client.id) {
+        await this.refreshTokens.revokeByToken(form.refresh_token);
+        await this.audit.record({
+          event_type: AuditEventType.REFRESH_TOKEN_REUSE_DETECTED,
+          user_id: row.user_id,
+          ip: ctx.ip,
+          request_id: ctx.requestId,
+          metadata: { kind: 'client_mismatch' },
+        });
+        throw new OAuthTokenError(401, 'invalid_grant', 'Token was not issued to this client');
+      }
+
+      // The backing session must still be alive.
+      const session = await this.sessions.findById(row.session_id);
+      if (!session || session.status !== 'active') {
+        await this.refreshTokens.revokeFamily(row.family_id);
+        throw new OAuthTokenError(401, 'invalid_grant', 'Session is no longer active');
+      }
+
+      // Optional scope narrowing - never elevation.
+      const originalScopes = row.scope.split(/\s+/).filter(Boolean);
+      const requested = (form.scope ?? '').split(/\s+/).filter(Boolean);
+      if (requested.some((s) => !originalScopes.includes(s))) {
+        throw new OAuthTokenError(400, 'invalid_scope', 'Scope exceeds original grant');
+      }
+      const scope = requested.length > 0 ? requested.join(' ') : row.scope;
+
+      const roles = await this.users.rolesOf(row.user_id);
+      const permissions = await this.users.permissionsOf(row.user_id);
+      const signed = await this.jwt.signAccessToken({
+        sub: row.user_id,
+        scope,
+        roles,
+        permissions,
+        sid: row.session_id,
+        client_id: client.client_id,
+        amr: ['oauth'],
+      });
+      await this.audit.record({
+        event_type: AuditEventType.TOKEN_ISSUED,
+        user_id: row.user_id,
+        client_id: client.id,
+        ip: ctx.ip,
+        request_id: ctx.requestId,
+        metadata: { grant: 'refresh_token', scope },
+      });
+      return {
+        access_token: signed.token,
+        token_type: 'Bearer',
+        expires_in: Math.floor((signed.expiresAt.getTime() - Date.now()) / 1000),
+        refresh_token: nextToken,
+        scope,
+      };
     }
 
     // ---- client_credentials ----
