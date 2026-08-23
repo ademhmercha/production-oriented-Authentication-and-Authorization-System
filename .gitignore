@@ -11,7 +11,8 @@ coverage/
 .env.*.local
 
 # Local development signing keys (never commit private keys)
-keys/
+# Root-anchored: only ./keys is ignored - NOT src/modules/keys (source code!)
+/keys/
 *.pem
 *.key
 
