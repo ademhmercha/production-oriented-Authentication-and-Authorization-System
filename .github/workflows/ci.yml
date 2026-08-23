@@ -5,14 +5,47 @@ on:
     branches:
       - main
   pull_request:
-    branches:
-      - main
+
+# One pipeline per branch/PR - superseded runs are cancelled.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  build:
+  # ---- Fast static gates: no services required ----
+  quality:
+    name: Lint, typecheck & build
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
 
-    # Integration tests boot the real apps - they need live Postgres + Redis.
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Security audit (blocking)
+        run: npm audit --audit-level=high
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+  # ---- Integration tests against real Postgres + Redis ----
+  test:
+    name: Tests (unit + integration)
+    runs-on: ubuntu-latest
+    needs: quality
+
     services:
       postgres:
         image: postgres:16-alpine
@@ -54,24 +87,48 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # Currently 1 known high advisory in a transitive dev dependency.
-      # Keep visible but non-blocking until it is fixed upstream.
-      - name: Security audit
-        run: npm audit --audit-level=high || echo "::warning::npm audit reported vulnerabilities"
-
-      - name: Lint
-        run: npm run lint
-
-      - name: Type check
-        run: npm run typecheck
-
-      - name: Build
-        run: npm run build
-
+      # Integration tests boot the real apps; they need a migrated,
+      # seeded schema (roles/permissions must exist before registration).
       - name: Migrate & seed test database
         run: |
           npm run migrate
           npm run seed
 
-      - name: Tests (unit + integration)
-        run: npm test
+      - name: Run tests with coverage
+        run: npx jest --coverage
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage/
+          retention-days: 7
+
+  # ---- Prove the production image builds ----
+  docker:
+    name: Docker image build
+    runs-on: ubuntu-latest
+    needs: quality
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build image (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke test compiled entrypoints exist
+        run: |
+          docker build -t identity-platform:ci .
+          docker run --rm --entrypoint node identity-platform:ci \
+            -e "require('fs').accessSync('dist/apps/auth-server/main.js'); \
+                require('fs').accessSync('dist/apps/api-gateway/main.js'); \
+                require('fs').accessSync('dist/apps/resource-api/main.js'); \
+                require('fs').accessSync('migrations'); \
+                console.log('image artifacts OK')"
