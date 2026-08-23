@@ -1,0 +1,457 @@
+openapi: 3.1.0
+info:
+  title: Identity Platform - Authentication & Authorization Server
+  version: 1.0.0
+  description: |
+    Production-oriented centralized authentication and authorization platform.
+
+    Features: Argon2id passwords, EdDSA (Ed25519) JWTs with JWKS publishing,
+    OAuth2 Authorization Code + PKCE and client_credentials grants, refresh-token
+    rotation with theft detection, TOTP MFA, RBAC with permission-scoped admin API,
+    Redis-backed rate limiting, risk engine, audit logging, RFC 7662 introspection
+    and RFC 7009 revocation.
+
+    Access tokens are EdDSA-signed JWTs; verify them against `/.well-known/jwks.json`.
+servers:
+  - url: http://localhost:3001
+    description: Auth server (direct)
+  - url: http://localhost:3000
+    description: API gateway (resource traffic)
+
+tags:
+  - name: Health
+  - name: Auth
+  - name: MFA
+  - name: OAuth2 / OIDC
+  - name: Admin
+  - name: Documents
+
+paths:
+  /health:
+    get:
+      tags: [Health]
+      summary: Liveness/readiness probe
+      responses:
+        '200': { description: Service healthy }
+        '503': { description: Dependency unhealthy }
+
+  /.well-known/jwks.json:
+    get:
+      tags: [OAuth2 / OIDC]
+      summary: JSON Web Key Set (public signing keys)
+      responses:
+        '200':
+          description: JWKS document
+          content:
+            application/json:
+              schema: { type: object }
+
+  /.well-known/openid-configuration:
+    get:
+      tags: [OAuth2 / OIDC]
+      summary: OIDC discovery document
+      responses:
+        '200': { description: Provider metadata }
+
+  /auth/register:
+    post:
+      tags: [Auth]
+      summary: Register a new user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string, minLength: 12 }
+      responses:
+        '201': { description: Registered; verification email queued }
+        '409': { description: Email already registered }
+        '400': { description: Validation error or weak password }
+
+  /auth/verify-email:
+    post:
+      tags: [Auth]
+      summary: Verify an email address with the emailed token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: { type: string }
+      responses:
+        '200': { description: Email verified }
+        '400': { description: Invalid/expired/used token }
+
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Password login (returns tokens or an MFA challenge)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string }
+      responses:
+        '200':
+          description: Token pair issued (or mfa_required challenge)
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/TokenPair'
+                  - type: object
+                    properties:
+                      outcome: { type: string, enum: [mfa_required] }
+                      mfa_challenge_id: { type: string }
+        '401': { description: Invalid credentials or unverified email }
+        '423': { description: Account locked after repeated failures }
+
+  /auth/mfa/challenge:
+    post:
+      tags: [MFA]
+      summary: Complete a login MFA challenge with a TOTP code
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [mfa_challenge_id, code]
+              properties:
+                mfa_challenge_id: { type: string }
+                code: { type: string, minLength: 6, maxLength: 6 }
+      responses:
+        '200': { description: Token pair issued }
+        '401': { description: Wrong code }
+
+  /auth/me:
+    get:
+      tags: [Auth]
+      summary: Current user profile, roles, permissions and MFA state
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Profile }
+        '401': { description: Missing/invalid token }
+
+  /auth/logout:
+    post:
+      tags: [Auth]
+      summary: Revoke current session (and all sessions with all_sessions)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '204': { description: Logged out }
+
+  /auth/forgot-password:
+    post:
+      tags: [Auth]
+      summary: Request a password reset email (always succeeds)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string, format: email }
+      responses:
+        '202': { description: Accepted (existence not revealed) }
+
+  /auth/reset-password:
+    post:
+      tags: [Auth]
+      summary: Reset password with the emailed token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, password]
+              properties:
+                token: { type: string }
+                password: { type: string, minLength: 12 }
+      responses:
+        '200': { description: Password updated, all sessions revoked }
+        '400': { description: Invalid token or policy violation }
+
+  /mfa/enroll:
+    post:
+      tags: [MFA]
+      summary: Begin TOTP enrollment (returns otpauth URL + QR)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Enrollment started }
+
+  /mfa/verify:
+    post:
+      tags: [MFA]
+      summary: Confirm enrollment OR complete a login challenge
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Verified }
+
+  /mfa/disable:
+    post:
+      tags: [MFA]
+      summary: Disable MFA (requires a valid code)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '204': { description: Disabled }
+
+  /oauth/authorize:
+    get:
+      tags: [OAuth2 / OIDC]
+      summary: Authorization endpoint (JSON style; issues authorization codes)
+      parameters:
+        - { in: query, name: response_type, required: true, schema: { type: string, enum: [code] } }
+        - { in: query, name: client_id, required: true, schema: { type: string } }
+        - { in: query, name: redirect_uri, required: true, schema: { type: string, format: uri } }
+        - { in: query, name: scope, schema: { type: string } }
+        - { in: query, name: state, schema: { type: string } }
+        - { in: query, name: nonce, schema: { type: string } }
+        - { in: query, name: code_challenge, required: true, schema: { type: string, minLength: 43 } }
+        - { in: query, name: code_challenge_method, schema: { type: string, enum: [S256] } }
+      responses:
+        '200': { description: code_url + state for the authenticated principal }
+        '400': { description: invalid_request / unsupported redirect }
+        '401': { description: login_required }
+
+  /oauth/token:
+    post:
+      tags: [OAuth2 / OIDC]
+      summary: Token endpoint (authorization_code + PKCE, client_credentials)
+      security:
+        - basicAuth: []
+        - {}
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [grant_type]
+              properties:
+                grant_type: { type: string, enum: [authorization_code, client_credentials] }
+                code: { type: string }
+                redirect_uri: { type: string }
+                code_verifier: { type: string }
+                scope: { type: string }
+      responses:
+        '200':
+          description: Token response
+          headers:
+            Cache-Control: { schema: { type: string }, description: no-store }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OAuthTokenResponse' }
+        '400': { description: invalid_request / invalid_grant / invalid_scope / unauthorized_client }
+        '401': { description: invalid_client }
+
+  /oauth/introspect:
+    post:
+      tags: [OAuth2 / OIDC]
+      summary: RFC 7662 token introspection (confidential clients only)
+      security: [{ basicAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: { type: string }
+      responses:
+        '200': { description: Active flag + claims }
+        '401': { description: invalid_client }
+
+  /oauth/revoke:
+    post:
+      tags: [OAuth2 / OIDC]
+      summary: RFC 7009 token revocation (always 200)
+      security: [{ basicAuth: [] }, {}]
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: { type: string }
+      responses:
+        '200': { description: Revoked or unknown token }
+
+  /userinfo:
+    get:
+      tags: [OAuth2 / OIDC]
+      summary: OIDC UserInfo (scope-gated claims)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Standard claims per granted scopes }
+        '403': { description: insufficient_scope (openid required) }
+
+  /admin/users:
+    get:
+      tags: [Admin]
+      summary: List users (users:read)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: query, name: limit, schema: { type: integer, minimum: 1, maximum: 100 } }
+        - { in: query, name: offset, schema: { type: integer, minimum: 0 } }
+      responses:
+        '200': { description: User list with roles }
+        '403': { description: MISSING_PERMISSION }
+
+  /admin/users/{id}/roles:
+    put:
+      tags: [Admin]
+      summary: Replace a user's roles (users:write)
+      security: [{ bearerAuth: [] }]
+      parameters: [{ in: path, name: id, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [roles]
+              properties:
+                roles: { type: array, items: { type: string } }
+      responses:
+        '200': { description: Roles updated }
+
+  /admin/users/{id}/status:
+    put:
+      tags: [Admin]
+      summary: Suspend/reactivate a user (users:write)
+      security: [{ bearerAuth: [] }]
+      parameters: [{ in: path, name: id, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        '200': { description: Status updated }
+
+  /admin/roles:
+    get:
+      tags: [Admin]
+      summary: List roles (roles:read)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Role list }
+
+  /admin/roles/{id}/permissions:
+    put:
+      tags: [Admin]
+      summary: Replace a role's permissions (roles:write)
+      security: [{ bearerAuth: [] }]
+      parameters: [{ in: path, name: id, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        '200': { description: Permissions updated }
+
+  /admin/clients:
+    get:
+      tags: [Admin]
+      summary: List OAuth clients (clients:read)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Client list (no secrets) }
+    post:
+      tags: [Admin]
+      summary: Create an OAuth client (clients:write); secret shown once
+      security: [{ bearerAuth: [] }]
+      responses:
+        '201': { description: Created client incl. one-time secret }
+
+  /admin/clients/{id}/rotate-secret:
+    post:
+      tags: [Admin]
+      summary: Rotate a client secret (clients:write)
+      security: [{ bearerAuth: [] }]
+      parameters: [{ in: path, name: id, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        '200': { description: New secret (shown once) }
+
+  /admin/audit:
+    get:
+      tags: [Admin]
+      summary: Query audit events (audit:read)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: query, name: event_type, schema: { type: string } }
+        - { in: query, name: limit, schema: { type: integer, maximum: 200 } }
+      responses:
+        '200': { description: Audit events }
+
+  /api/v1/documents:
+    get:
+      tags: [Documents]
+      summary: List documents (via gateway; api.read)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Own documents (all for service clients) }
+    post:
+      tags: [Documents]
+      summary: Create a document (api.write; end users only)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '201': { description: Created }
+        '403': { description: INSUFFICIENT_SCOPE or SERVICE_FORBIDDEN }
+
+  /api/v1/documents/{id}:
+    delete:
+      tags: [Documents]
+      summary: Delete a document (api.write; owner or admin)
+      security: [{ bearerAuth: [] }]
+      parameters: [{ in: path, name: id, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        '204': { description: Deleted }
+        '404': { description: Not found or foreign }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: EdJWT
+      description: EdDSA (Ed25519) signed access token, aud=api
+    basicAuth:
+      type: http
+      scheme: basic
+      description: OAuth client credentials (client_secret_basic)
+
+  schemas:
+    TokenPair:
+      type: object
+      properties:
+        access_token: { type: string }
+        token_type: { type: string, example: Bearer }
+        expires_in: { type: integer, example: 900 }
+        refresh_token: { type: string }
+        id_token: { type: string }
+        scope: { type: string }
+        user:
+          type: object
+          properties:
+            id: { type: string, format: uuid }
+            email: { type: string, format: email }
+    OAuthTokenResponse:
+      type: object
+      properties:
+        access_token: { type: string }
+        token_type: { type: string, example: Bearer }
+        expires_in: { type: integer }
+        refresh_token: { type: string }
+        id_token: { type: string }
+        scope: { type: string }

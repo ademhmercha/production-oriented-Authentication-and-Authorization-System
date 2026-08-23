@@ -43,6 +43,7 @@ import { TokenRevocationService } from './modules/tokens/token-revocation';
 import { createOAuthRoutes } from './modules/oauth/oauth.routes';
 import { createOidcRoutes } from './modules/oauth/oidc.routes';
 import { createDiscoveryRoutes } from './modules/oauth/discovery.routes';
+import { createDocsRoutes } from './modules/docs/docs.routes';
 
 export interface Services {
   db: Database;
@@ -167,6 +168,9 @@ export function createAuthServer(deps: AuthServerDeps): Express {
   // OIDC discovery + userinfo.
   app.use(createDiscoveryRoutes());
   app.use(createOidcRoutes(services.users, services.jwt));
+
+  // Interactive API docs (Swagger UI) + machine-readable spec.
+  app.use(createDocsRoutes());
 
   // Health/readiness probes (liveness + dependency checks).
   app.use('/health', createHealthRouter({
