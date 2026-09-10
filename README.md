@@ -93,3 +93,40 @@ powershell -File scripts\verify-all.ps1   # 28 live checks against the running s
 Configuration comes from zod-validated env vars — see [`.env.example`](.env.example).
 Production must set `KMS_MASTER_KEY`; recommended extras: TLS at the edge, real SMTP,
 managed KMS/Vault, SIEM shipping of audit events.
+
+## Deploy with Helm (local, free)
+
+The [Helm chart](deploy/helm/identity-platform) (`identity-platform`) deploys the whole
+stack on minikube with zero cloud cost: auth-server, api-gateway, resource-api, plus
+bundled Postgres, Redis, MailHog, an nginx Ingress, and migrate/seed hook Jobs. Secrets
+(`KMS_MASTER_KEY`, `GATEWAY_SHARED_SECRET`, `POSTGRES_PASSWORD`) are generated once and
+reused across upgrades; migrations run on `pre-install`/`pre-upgrade`.
+
+Plan: [`docs/plan-helm-k8s.md`](docs/plan-helm-k8s.md).
+
+```powershell
+minikube start --driver=docker
+minikube addons enable ingress
+
+docker build -t identity-platform:local .
+minikube image load identity-platform:local
+
+helm upgrade --install identity-platform deploy/helm/identity-platform --wait --timeout 15m
+
+minikube tunnel   # ingress: http://identity.local (add "127.0.0.1 identity.local" to hosts)
+```
+
+- API gateway: `http://identity.local/api/v1` (health `http://identity.local/healthz`)
+- Swagger docs: `http://identity.local/docs` · admin UI: `http://identity.local/admin`
+- MailHog: `kubectl port-forward svc/identity-platform-mailhog 8025:8025`
+- Seeded admin: `admin@auth.local`; the one-time password is printed by the seed Job:
+  `kubectl logs jobs/identity-platform-seed` (set `seeds.adminPassword` to pin it)
+- Scale limits: auth-server runs at **1 replica** because signing keys live on a PVC.
+
+### Self-hosted runner deploy workflow
+
+[`.github/workflows/deploy-minikube.yml`](.github/workflows/deploy-minikube.yml) runs a
+manual (`workflow_dispatch`) deploy from the repo's **Actions** tab onto a self-hosted
+machine that has Docker + minikube + helm + kubectl on PATH. It is never wired to push/PR
+events, so arbitrary PR code cannot reach the runner. Inputs: `action` (apply/destroy),
+`image_tag`, `admin_password`.
