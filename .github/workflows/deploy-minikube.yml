@@ -1,0 +1,103 @@
+name: Deploy (self-hosted minikube)
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'apply (install or upgrade) / destroy (uninstall)'
+        required: true
+        default: 'apply'
+        type: choice
+        options:
+          - apply
+          - destroy
+      image_tag:
+        description: 'Image tag to build and load into minikube'
+        required: false
+        default: 'local'
+        type: string
+      admin_password:
+        description: 'Seed admin password (leave empty to get a generated one from the seed job logs)'
+        required: false
+        type: string
+
+concurrency:
+  group: deploy-self-hosted
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  IMAGE_TAG: ${{ inputs.image_tag }}
+
+jobs:
+  deploy:
+    name: minikube ${{ inputs.action }} (self-hosted)
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+
+      # Self-hosted runner on the host machine: needs Docker (Desktop), minikube,
+      # helm and kubectl on PATH. Manual-only trigger, so no PR code can reach it.
+      - name: Check prerequisites
+        shell: powershell
+        run: |
+          $tools = 'minikube', 'docker', 'helm', 'kubectl'
+          foreach ($tool in $tools) {
+            if (-not (Get-Command $tool -ErrorAction SilentlyContinue)) {
+              Write-Error "$tool missing on the self-hosted runner PATH"
+              exit 1
+            }
+          }
+          docker info --format '{{.ServerVersion}}' | Out-Null
+          if (-not $?) {
+            Write-Error 'Docker is not running - start Docker Desktop and retry'
+            exit 1
+          }
+          Write-Output 'prerequisites OK'
+
+      - name: Ensure minikube is running
+        shell: powershell
+        run: |
+          minikube status --wait=apiserver 2>$null | Out-Null
+          if (-not $?) {
+            minikube start --driver=docker --wait=all
+            if (-not $?) { exit 1 }
+          }
+          minikube addons enable ingress
+          if (-not $?) { exit 1 }
+          kubectl config current-context
+
+      - name: Build and load image into minikube
+        shell: powershell
+        run: |
+          docker build -t "identity-platform:$env:IMAGE_TAG" .
+          if (-not $?) { exit 1 }
+          minikube image load "identity-platform:$env:IMAGE_TAG"
+          if (-not $?) { exit 1 }
+
+      - name: Install or upgrade stack
+        if: inputs.action == 'apply'
+        shell: powershell
+        run: |
+          $setArgs = @('--set', "image.tag=$env:IMAGE_TAG")
+          if ($env:ADMIN_PASSWORD) {
+            $setArgs += '--set', "seeds.adminPassword=$env:ADMIN_PASSWORD"
+          }
+          helm upgrade --install identity-platform deploy/helm/identity-platform @setArgs --wait --timeout 15m
+          if (-not $?) { exit 1 }
+
+      - name: Destroy stack
+        if: inputs.action == 'destroy'
+        shell: powershell
+        run: |
+          helm uninstall identity-platform
+          if (-not $?) { exit 1 }
+
+      - name: Pod status
+        if: always()
+        shell: powershell
+        run: |
+          kubectl get pods
+          kubectl get pvc
