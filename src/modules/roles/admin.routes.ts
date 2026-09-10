@@ -23,7 +23,7 @@ export function createAdminRoutes(rbac: RbacRepository, audit: AuditLogService, 
   const router = Router();
   const auth = authenticate(jwtService);
 
-  // ---- Role / permission / scope catalogues ----
+  // Role / permission / scope catalogues
   router.get(
     '/roles',
     auth,
@@ -68,7 +68,7 @@ export function createAdminRoutes(rbac: RbacRepository, audit: AuditLogService, 
     asyncHandler(async (_req, res) => res.json({ scopes: await rbac.listScopes() })),
   );
 
-  // ---- User administration ----
+  // User administration
   router.get(
     '/users',
     auth,
@@ -114,7 +114,7 @@ export function createAdminRoutes(rbac: RbacRepository, audit: AuditLogService, 
     }),
   );
 
-  // ---- Audit trail access ----
+  // Audit trail access
   router.get(
     '/audit',
     auth,

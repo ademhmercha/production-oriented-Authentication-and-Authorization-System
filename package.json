@@ -1,7 +1,7 @@
 {
   "name": "identity-platform",
   "version": "1.0.0",
-  "description": "Production-oriented centralized Authentication & Authorization platform: Authorization Server (Express/TS), API Gateway, protected Resource API, OAuth2 + PKCE, OIDC-ready, RBAC, MFA, Redis rate limiting, risk engine, audit logging.",
+  "description": "Centralized identity platform: authorization server, zero-trust API gateway and protected resource API with OAuth2 + PKCE, OIDC, RBAC, TOTP MFA, Redis-backed rate limiting, risk engine and audit logging.",
   "private": true,
   "license": "MIT",
   "engines": {

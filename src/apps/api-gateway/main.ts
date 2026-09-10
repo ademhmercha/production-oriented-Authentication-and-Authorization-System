@@ -1,6 +1,3 @@
-/**
- * API Gateway entrypoint.
- */
 import { loadConfig } from '../../config';
 import { logger } from '../../common/logger';
 import { RedisService } from '../../infrastructure/redis/redis.service';

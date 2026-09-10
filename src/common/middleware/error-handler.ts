@@ -2,11 +2,9 @@ import type { NextFunction, Request, Response } from 'express';
 import { AppError } from '../errors';
 
 /**
- * Central error handler.
- *
- * SECURITY: converts every thrown error into a safe JSON response.
- * Unknown/internal errors never leak stack traces or messages to clients -
- * they are logged server-side and returned as a generic 500.
+ * Central error handler. Maps known errors to safe JSON responses; internal
+ * errors are logged server-side and returned as a generic 500 so stack
+ * traces and messages never leak to clients.
  */
 export function errorHandler(logger: { error: (obj: unknown, msg?: string) => void }) {
   return (err: unknown, req: Request, res: Response, _next: NextFunction): void => {

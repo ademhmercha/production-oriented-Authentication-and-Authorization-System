@@ -4,10 +4,8 @@ import { Database } from './pool';
 import { logger } from '../../common/logger';
 
 /**
- * Minimal, explicit SQL migration runner.
- *
- * Production rule: schema changes are applied through these versioned,
- * ordered, transactional migrations - never via automatic schema sync.
+ * Versioned SQL migrations, applied in order inside transactions.
+ * Use these for schema changes - never automatic schema sync.
  */
 export async function runMigrations(db: Database, migrationsDir: string): Promise<string[]> {
   await db.query(`

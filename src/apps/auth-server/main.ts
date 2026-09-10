@@ -1,6 +1,3 @@
-/**
- * Authorization Server entrypoint.
- */
 import { loadConfig } from '../../config';
 import { logger } from '../../common/logger';
 import { createAuthServer, finalizeApp } from '../../app.factory';

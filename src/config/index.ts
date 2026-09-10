@@ -1,11 +1,6 @@
 /**
- * Central configuration module.
- *
- * All runtime configuration comes from environment variables.
- * Values are validated at startup with zod - the process fails fast
- * if required configuration is missing or malformed (12-factor style).
- *
- * SECURITY: no secrets are hard-coded anywhere in this codebase.
+ * Runtime configuration from environment variables, validated with zod at
+ * startup so missing or malformed settings fail fast.
  */
 import 'dotenv/config';
 import { z } from 'zod';
@@ -24,18 +19,18 @@ const bool = (defaultValue: boolean) =>
     .transform((v) => (v === undefined || v === '' ? defaultValue : v === 'true' || v === '1'));
 
 const envSchema = z.object({
-  // ---- Runtime ----
+  // Runtime
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: int(3001),
   GATEWAY_PORT: int(3000),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
 
-  // ---- Persistence ----
+  // Persistence
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
   DATABASE_POOL_MAX: int(10),
   REDIS_URL: z.string().min(1, 'REDIS_URL is required'),
 
-  // ---- Tokens / JWT ----
+  // Tokens / JWT
   JWT_ISSUER: z.string().url().default('https://auth.local'),
   JWT_AUDIENCE: z.string().default('api'),
   ACCESS_TOKEN_TTL: int(900), // seconds, 15 min default; spec allows 5-15 min
@@ -44,16 +39,16 @@ const envSchema = z.object({
   ID_TOKEN_TTL: int(3600),
   SESSION_TTL: int(60 * 60 * 24 * 30),
 
-  // ---- Key management ----
+  // Key management
   KMS_PROVIDER: z.enum(['local', 'aws-kms', 'azure-kv', 'gcp-kms', 'vault']).default('local'),
   KMS_KEY_DIR: z.string().default('./keys'),
   KMS_MASTER_KEY: z.string().optional(), // base64 32-byte key used by LocalKeyProvider to wrap signing keys at rest
 
-  // ---- Passwords ----
+  // Passwords
   PASSWORD_MIN_LENGTH: int(12),
   BCRYPT_ROUNDS: int(12), // only used if argon2 unavailable; argon2id is primary
 
-  // ---- Email ----
+  // Email
   EMAIL_PROVIDER: z.enum(['mock', 'smtp']).default('mock'),
   SMTP_HOST: z.string().optional(),
   SMTP_PORT: int(1025),
@@ -64,12 +59,12 @@ const envSchema = z.object({
   EMAIL_VERIFICATION_TTL: int(60 * 60 * 24), // 24h
   PASSWORD_RESET_TTL: int(60 * 30), // 30 min
 
-  // ---- CORS / security ----
+  // CORS / security
   CORS_ORIGINS: z.string().default('http://localhost:3000,http://localhost:8080'),
   TRUST_PROXY: bool(true),
   COOKIE_DOMAIN: z.string().optional(),
 
-  // ---- Rate limiting (requests per window per key) ----
+  // Rate limiting (requests per window per key)
   RATE_LIMIT_WINDOW: int(60),
   RATE_LIMIT_LOGIN: int(5),
   RATE_LIMIT_REGISTER: int(3),
@@ -78,27 +73,27 @@ const envSchema = z.object({
   RATE_LIMIT_AUTHORIZE: int(10),
   RATE_LIMIT_API: int(120),
 
-  // ---- Risk engine ----
+  // Risk engine
   RISK_FAILED_LOGINS_THRESHOLD: int(5),
   RISK_LOCKOUT_MINUTES: int(15),
   RISK_HIGH_SCORE_ACTION: z.enum(['deny', 'mfa', 'allow']).default('mfa'),
 
-  // ---- Account lockout ----
+  // Account lockout
   MAX_FAILED_LOGINS: int(5),
   LOCKOUT_MINUTES: int(15),
 
-  // ---- MFA ----
+  // MFA
   MFA_ISSUER: z.string().default('Identity Platform'),
   MFA_CHALLENGE_TTL: int(300),
 
-  // ---- Service topology (used by gateway + e2e) ----
+  // Service topology (used by gateway + e2e)
   AUTH_SERVER_URL: z.string().url().default('http://localhost:3001'),
   RESOURCE_API_URL: z.string().url().default('http://localhost:3002'),
   RESOURCE_PORT: int(3002),
   // Shared secret proving requests reached the resource API via the gateway.
   GATEWAY_SHARED_SECRET: z.string().optional(),
 
-  // ---- Bootstrap admin (seed only) ----
+  // Bootstrap admin (seed only)
   ADMIN_EMAIL: z.string().email().default('admin@auth.local'),
   ADMIN_PASSWORD: z.string().optional(),
 });

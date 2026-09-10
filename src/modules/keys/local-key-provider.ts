@@ -49,7 +49,7 @@ export class LocalKeyProvider implements KeyManagementService {
     }
   }
 
-  // ---------- Master / data-encryption key ----------
+  // Master / data-encryption key
 
   private masterKey(): Buffer {
     if (this.masterKeyCache) return this.masterKeyCache;
@@ -87,7 +87,7 @@ export class LocalKeyProvider implements KeyManagementService {
     return Buffer.from(derived);
   }
 
-  // ---------- Envelope encryption ----------
+  // Envelope encryption
 
   async encrypt(plaintext: Buffer): Promise<EncryptedEnvelope> {
     const iv = randomBytes(12);
@@ -119,7 +119,7 @@ export class LocalKeyProvider implements KeyManagementService {
     }
   }
 
-  // ---------- Signing keys ----------
+  // Signing keys
 
   private wrapPrivateKey(privateKeyPem: string): string {
     const iv = randomBytes(12);

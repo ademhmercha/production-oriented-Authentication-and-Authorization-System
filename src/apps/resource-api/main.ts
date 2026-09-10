@@ -1,6 +1,3 @@
-/**
- * Resource API entrypoint.
- */
 import { loadConfig } from '../../config';
 import { logger } from '../../common/logger';
 import { Database } from '../../infrastructure/database/pool';

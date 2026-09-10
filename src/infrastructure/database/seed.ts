@@ -73,7 +73,7 @@ export async function runSeeds(db: Database): Promise<{ adminEmail: string; gene
     // 'user' has no direct permissions; end-users authorize via scopes.
   });
 
-  // ---- Bootstrap admin ----
+  // Bootstrap admin
   let generatedPassword: string | undefined;
   const adminEmail = config.ADMIN_EMAIL;
   let adminPassword = config.ADMIN_PASSWORD;

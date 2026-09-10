@@ -1,11 +1,7 @@
 import Redis from 'ioredis';
 
 /**
- * Clean Redis abstraction.
- *
- * Business logic depends on this interface (or higher-level services such as
- * RateLimitService), never on raw redis commands scattered through the code,
- * so the cache layer can be swapped/mocked easily.
+ * Thin client wrapper so business logic never talks to ioredis directly.
  */
 export class RedisService {
   private readonly client: Redis;
@@ -72,7 +68,7 @@ export class RedisService {
     return count;
   }
 
-  // ---- Set operations (risk engine: distinct-IP tracking) ----
+  // Set operations (risk engine: distinct-IP tracking)
   async setAdd(key: string, member: string): Promise<void> {
     await this.client.sadd(key, member);
   }

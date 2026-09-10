@@ -134,7 +134,7 @@ export class MfaService {
     await this.db.query(`UPDATE users SET mfa_required = FALSE WHERE id = $1`, [userId]);
   }
 
-  // ---------- internals ----------
+  // internals
 
   private static challengeKey(id: string): string {
     return RedisService.key('mfa', 'challenge', id);

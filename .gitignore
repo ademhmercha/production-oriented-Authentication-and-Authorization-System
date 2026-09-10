@@ -28,3 +28,6 @@ Thumbs.db
 
 # Test artifacts
 test-results.xml
+
+# Local agent instructions (never published)
+AGENTS.md

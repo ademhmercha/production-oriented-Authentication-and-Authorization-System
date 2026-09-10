@@ -85,7 +85,7 @@ export class AuthService {
       throw new InvalidCredentialsError();
     }
 
-    // ---- Account status gates ----
+    // Account status gates
     const now = new Date();
     if (user.status === 'disabled') {
       throw new ForbiddenError('Account is disabled', 'ACCOUNT_DISABLED');
@@ -94,7 +94,7 @@ export class AuthService {
       throw new AppError(423, 'ACCOUNT_LOCKED', 'Account temporarily locked');
     }
 
-    // ---- Credential verification (constant work for existing users) ----
+    // Credential verification (constant work for existing users)
     const passwordOk = await verifyPassword(user.password_hash, input.password);
     if (!passwordOk) {
       await this.users.recordFailedLogin(user.id);
@@ -126,7 +126,7 @@ export class AuthService {
       throw new AuthError('Email address not verified', 'EMAIL_NOT_VERIFIED');
     }
 
-    // ---- Risk evaluation ----
+    // Risk evaluation
     const knownDevice = await this.isKnownDevice(user.id, ctx);
     const evaluation = await this.riskEngine.evaluateLogin({
       userId: user.id,
@@ -168,7 +168,7 @@ export class AuthService {
       throw new AppError(403, 'RISK_DENIED', 'Login denied due to suspicious activity');
     }
 
-    // ---- Session + tokens (or MFA challenge) ----
+    // Session + tokens (or MFA challenge)
     const hasMfa = await this.mfa.hasActiveMethod(user.id);
     if (hasMfa || action === 'mfa') {
       if (!hasMfa && action === 'mfa') {
@@ -378,7 +378,7 @@ export class AuthService {
     });
   }
 
-  // ---------- internals ----------
+  // internals
 
   private async isKnownDevice(userId: string, ctx: RequestContext): Promise<boolean> {
     if (!ctx.userAgent || !ctx.ip) return false;

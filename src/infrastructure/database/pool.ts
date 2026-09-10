@@ -2,11 +2,8 @@ import { Pool, PoolClient, QueryResult, QueryResultRow } from 'pg';
 import { loadConfig } from '../../config';
 
 /**
- * Thin PostgreSQL access layer.
- *
- * All repositories go through parameterized queries ($1, $2, ...) which
- * prevents SQL injection by construction. No string concatenation of
- * user input into SQL is ever done.
+ * Database access wrapper. All queries are parameterized ($1, $2, ...) —
+ * user input is never concatenated into SQL.
  */
 export class Database {
   private readonly pool: Pool;

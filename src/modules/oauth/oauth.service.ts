@@ -165,7 +165,7 @@ export class OAuthService {
     basicAuth: { clientId: string; clientSecret: string } | null,
     ctx: RequestContext,
   ): Promise<TokenResponse> {
-    // ---- Client identification (basic > post > form) ----
+    // Client identification (basic > post > form)
     const clientId = basicAuth?.clientId ?? form.client_id;
     if (!clientId) {
       throw new OAuthTokenError(401, 'invalid_client', 'Client authentication required');
@@ -248,7 +248,7 @@ export class OAuthService {
       return this.issueUserTokens(codeRow.user_id, client, codeRow.scope, codeRow.nonce, ctx);
     }
 
-    // ---- refresh_token (RFC 6749 §6) with rotation + theft detection ----
+    // refresh_token (RFC 6749 §6) with rotation + theft detection
     if (form.grant_type === 'refresh_token') {
       if (!form.refresh_token) {
         throw new OAuthTokenError(400, 'invalid_request', 'refresh_token is required');
@@ -339,7 +339,7 @@ export class OAuthService {
       };
     }
 
-    // ---- client_credentials ----
+    // client_credentials
     if (form.grant_type === 'client_credentials') {
       if (client.client_type === 'public') {
         throw new OAuthTokenError(401, 'unauthorized_client',

@@ -1,5 +1,9 @@
 # Identity Platform — Authentication & Authorization System
 
+![CI](https://github.com/ademhmercha/production-oriented-Authentication-and-Authorization-System/actions/workflows/ci.yml/badge.svg)
+![Node](https://img.shields.io/badge/node-%3E%3D20-339933?logo=nodedotjs&logoColor=white)
+![License](https://img.shields.io/badge/license-MIT-blue)
+
 Centralized AuthN/AuthZ platform built with **Express.js + TypeScript**: OAuth 2.0 / OIDC,
 EdDSA JWTs, refresh rotation with theft detection, RBAC, TOTP MFA, risk engine and a
 zero-trust API gateway — no third-party IdP.

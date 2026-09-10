@@ -17,12 +17,9 @@ export interface OAuthClientRow {
 }
 
 /**
- * OAuth client management.
- *
- * SECURITY:
- * - Client secrets are generated server-side and returned exactly ONCE at
- *   creation/rotation; only the Argon2id hash is stored.
- * - Public clients (SPAs / mobile) have NO secret and MUST use PKCE.
+ * OAuth client management. Secrets are generated server-side and returned
+ * exactly once at creation/rotation; only the Argon2id hash is stored.
+ * Public clients (SPAs / mobile) have no secret and must use PKCE.
  */
 export class ClientRepository {
   constructor(private readonly db: Database) {}

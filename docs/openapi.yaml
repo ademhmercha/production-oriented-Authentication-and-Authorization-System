@@ -3,7 +3,7 @@ info:
   title: Identity Platform - Authentication & Authorization Server
   version: 1.0.0
   description: |
-    Production-oriented centralized authentication and authorization platform.
+    Centralized authentication and authorization platform built on Express.
 
     Features: Argon2id passwords, EdDSA (Ed25519) JWTs with JWKS publishing,
     OAuth2 Authorization Code + PKCE and client_credentials grants, refresh-token
