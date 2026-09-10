@@ -1,0 +1,32 @@
+Identity Platform - Helm install notes
+=====================================
+
+Check status
+  helm status identity-platform
+  kubectl get pods
+
+Seeded admin (when ADMIN_PASSWORD is not set in values, a one-time password
+is generated during install):
+  kubectl logs jobs/identity-platform-seed
+
+Reach the services
+  minikube tunnel        # ingress: http://identity.local (add to /etc/hosts)
+  kubectl port-forward svc/identity-platform-api-gateway 3000:3000
+  kubectl port-forward svc/identity-platform-mailhog 8025:8025
+  kubectl port-forward svc/identity-platform-auth-server 3001:3001
+
+Operational constraints
+  - auth-server runs at 1 replica: signing keys are files on a PVC
+    (identity-platform-keys). Scaling it to N replicas requires a shared,
+    writable file system.
+  - Secrets (KMS_MASTER_KEY, GATEWAY_SHARED_SECRET, POSTGRES_PASSWORD) are
+    generated on first install and reused on upgrade - they never rotate.
+  - Migrations run as a pre-install/pre-upgrade hook job; seed runs on
+    install only.
+
+Upgrading with new values
+  helm upgrade identity-platform deploy/helm/identity-platform \
+    --values my-values.yaml
+
+Uninstall (note: PVCs persist by default)
+  helm uninstall identity-platform

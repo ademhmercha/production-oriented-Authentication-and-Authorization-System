@@ -1,0 +1,33 @@
+{{- if .Values.infrastructure.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ printf "%s-keys" (include "identity-platform.fullname" .) }}
+  labels:
+    app.kubernetes.io/name: keys
+    {{- include "identity-platform.labels" . | nindent 4 }}
+spec:
+  accessModes: ["ReadWriteOnce"]
+  {{- if .Values.keys.storageClass }}
+  storageClassName: {{ .Values.keys.storageClass }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.keys.size }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ printf "%s-redis-data" (include "identity-platform.fullname" .) }}
+  labels:
+    app.kubernetes.io/name: redis-data
+    {{- include "identity-platform.labels" . | nindent 4 }}
+spec:
+  accessModes: ["ReadWriteOnce"]
+  {{- if .Values.redis.storageClass }}
+  storageClassName: {{ .Values.redis.storageClass }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.redis.size }}
+{{- end }}

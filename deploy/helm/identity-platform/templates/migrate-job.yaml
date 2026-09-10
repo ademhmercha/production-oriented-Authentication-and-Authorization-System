@@ -1,0 +1,40 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ printf "%s-migrate" (include "identity-platform.fullname" .) }}
+  labels:
+    app.kubernetes.io/name: migrate
+    {{- include "identity-platform.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "1"
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  backoffLimit: 4
+  template:
+    metadata:
+      name: {{ printf "%s-migrate" (include "identity-platform.fullname" .) }}
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: migrate
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              for i in $(seq 1 60); do
+                node -e 'const p=require("pg");const c=new p.Client({connectionString:process.env.DATABASE_URL,connectionTimeoutMillis:2000});c.connect().then(()=>{c.end();process.exit(0)}).catch(()=>process.exit(1))' && break
+                sleep 2
+              done
+              node dist/scripts/migrate.js
+          envFrom:
+            - configMapRef:
+                name: {{ include "identity-platform.fullname" . }}
+            - secretRef:
+                name: {{ include "identity-platform.credentials" . }}
+          env:
+            - name: DATABASE_URL
+              value: {{ .Values.databaseUrl | default (printf "postgres://identity:$(POSTGRES_PASSWORD)@%s-postgres:5432/identity" (include "identity-platform.fullname" .)) }}
+            - name: MIGRATIONS_DIR
+              value: /app/migrations

@@ -1,0 +1,37 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ printf "%s-seed" (include "identity-platform.fullname" .) }}
+  labels:
+    app.kubernetes.io/name: seed
+    {{- include "identity-platform.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-install
+    "helm.sh/hook-weight": "2"
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  backoffLimit: 4
+  template:
+    metadata:
+      name: {{ printf "%s-seed" (include "identity-platform.fullname" .) }}
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: seed
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["node", "dist/scripts/seed.js"]
+          envFrom:
+            - configMapRef:
+                name: {{ include "identity-platform.fullname" . }}
+            - secretRef:
+                name: {{ include "identity-platform.credentials" . }}
+          env:
+            - name: DATABASE_URL
+              value: {{ .Values.databaseUrl | default (printf "postgres://identity:$(POSTGRES_PASSWORD)@%s-postgres:5432/identity" (include "identity-platform.fullname" .)) }}
+            - name: ADMIN_EMAIL
+              value: {{ .Values.seeds.adminEmail | quote }}
+            {{- if .Values.seeds.adminPassword }}
+            - name: ADMIN_PASSWORD
+              value: {{ .Values.seeds.adminPassword | quote }}
+            {{- end }}

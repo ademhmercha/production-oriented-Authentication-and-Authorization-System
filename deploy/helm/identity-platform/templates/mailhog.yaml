@@ -1,0 +1,53 @@
+{{- if .Values.infrastructure.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ printf "%s-mailhog" (include "identity-platform.fullname" .) }}
+  labels:
+    app.kubernetes.io/name: mailhog
+    {{- include "identity-platform.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: mailhog
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  ports:
+    - name: smtp
+      port: 1025
+    - name: http
+      port: 8025
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ printf "%s-mailhog" (include "identity-platform.fullname" .) }}
+  labels:
+    app.kubernetes.io/name: mailhog
+    {{- include "identity-platform.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mailhog
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mailhog
+        app.kubernetes.io/instance: {{ .Release.Name }}
+    spec:
+      containers:
+        - name: mailhog
+          image: {{ .Values.mailhog.image | quote }}
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: smtp
+              containerPort: 1025
+            - name: http
+              containerPort: 8025
+          readinessProbe:
+            tcpSocket:
+              port: 8025
+            initialDelaySeconds: 3
+            periodSeconds: 5
+{{- end }}

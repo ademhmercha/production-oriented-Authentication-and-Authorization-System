@@ -1,0 +1,70 @@
+{{- range $name, $app := .Values.apps }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ printf "%s-%s" (include "identity-platform.fullname" $) $name }}
+  labels:
+    app.kubernetes.io/name: {{ $name }}
+    {{- include "identity-platform.labels" $ | nindent 4 }}
+spec:
+  replicas: {{ $app.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ $name }}
+      app.kubernetes.io/instance: {{ $.Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ $name }}
+        app.kubernetes.io/instance: {{ $.Release.Name }}
+    spec:
+      {{- if $app.keysVolume }}
+      securityContext:
+        fsGroup: 1000
+        runAsNonRoot: true
+      {{- end }}
+      containers:
+        - name: {{ $name }}
+          image: "{{ $.Values.image.repository }}:{{ $.Values.image.tag }}"
+          imagePullPolicy: {{ $.Values.image.pullPolicy }}
+          command: {{ toJson $app.command }}
+          ports:
+            - name: http
+              containerPort: {{ $app.port }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "identity-platform.fullname" $ }}
+            - secretRef:
+                name: {{ include "identity-platform.credentials" $ }}
+          env:
+            - name: DATABASE_URL
+              value: {{ $.Values.databaseUrl | default (printf "postgres://identity:$(POSTGRES_PASSWORD)@%s-postgres:5432/identity" (include "identity-platform.fullname" $)) }}
+          livenessProbe:
+            httpGet:
+              path: {{ $app.livenessProbe.path }}
+              port: {{ $app.port }}
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 3
+          readinessProbe:
+            httpGet:
+              path: {{ $app.readinessProbe.path }}
+              port: {{ $app.port }}
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+          resources:
+            {{- toYaml $.Values.resources | nindent 12 }}
+          {{- if $app.keysVolume }}
+          volumeMounts:
+            - name: keys
+              mountPath: /app/keys
+          {{- end }}
+      {{- if $app.keysVolume }}
+      volumes:
+        - name: keys
+          persistentVolumeClaim:
+            claimName: {{ printf "%s-keys" (include "identity-platform.fullname" $) }}
+      {{- end }}
+{{- end }}

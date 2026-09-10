@@ -1,0 +1,19 @@
+{{- range $name, $app := .Values.apps }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ printf "%s-%s" (include "identity-platform.fullname" $) $name }}
+  labels:
+    app.kubernetes.io/name: {{ $name }}
+    {{- include "identity-platform.labels" $ | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: {{ $name }}
+    app.kubernetes.io/instance: {{ $.Release.Name }}
+  ports:
+    - name: http
+      port: {{ $app.port }}
+      targetPort: {{ $app.port }}
+{{- end }}

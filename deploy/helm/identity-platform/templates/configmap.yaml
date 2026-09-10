@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "identity-platform.fullname" . }}
+  labels:
+    {{- include "identity-platform.labels" . | nindent 4 }}
+data:
+  {{- range $k, $v := .Values.env }}
+  {{ $k }}: {{ $v | quote }}
+  {{- end }}
+  REDIS_URL: {{ .Values.serviceUrls.redis | default (printf "redis://%s-redis:6379" (include "identity-platform.fullname" .)) | quote }}
+  AUTH_SERVER_URL: {{ .Values.serviceUrls.authServer | default (printf "http://%s-auth-server:3001" (include "identity-platform.fullname" .)) | quote }}
+  RESOURCE_API_URL: {{ .Values.serviceUrls.resourceApi | default (printf "http://%s-resource-api:3002" (include "identity-platform.fullname" .)) | quote }}
+  SMTP_HOST: {{ .Values.serviceUrls.smtpHost | default (printf "%s-mailhog" (include "identity-platform.fullname" .)) | quote }}
