@@ -23,6 +23,7 @@ const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: int(3001),
   GATEWAY_PORT: int(3000),
+  FRONTEND_PORT: int(8080),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
 
   // Persistence
@@ -92,6 +93,13 @@ const envSchema = z.object({
   RESOURCE_PORT: int(3002),
   // Shared secret proving requests reached the resource API via the gateway.
   GATEWAY_SHARED_SECRET: z.string().optional(),
+
+  // Frontend (browser SPA) service
+  // Same-origin (empty string) lets the SPA talk to the platform through one
+  // host (Ingress / nginx). Set explicit origins for local development where
+  // the backends run on different ports than the frontend.
+  PUBLIC_AUTH_BASE: z.string().default(''),
+  PUBLIC_API_BASE: z.string().default(''),
 
   // Bootstrap admin (seed only)
   ADMIN_EMAIL: z.string().email().default('admin@auth.local'),

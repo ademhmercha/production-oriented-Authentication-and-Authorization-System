@@ -1,19 +1,25 @@
-name: CI
+name: CI / CD
 
 on:
   push:
     branches:
       - main
   pull_request:
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
-  # ---- Fast static gates: no services required ----
-  quality:
-    name: Lint, typecheck & build
+  # ========================================================================
+  # CI - fast static gates, backend and frontend in parallel, no services.
+  # ========================================================================
+  backend:
+    name: Backend (lint, typecheck, build)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -30,20 +36,46 @@ jobs:
       - name: Security audit (blocking)
         run: npm audit --audit-level=high
 
-      - name: Lint
-        run: npm run lint
+      - name: Lint backend
+        run: npm run lint:backend
 
-      - name: Type check
-        run: npm run typecheck
+      - name: Type check backend
+        run: npm run typecheck:backend
 
-      - name: Build
-        run: npm run build
+      - name: Build backend
+        run: npm run build:backend
 
-  # ---- Integration tests against real Postgres + Redis ----
+  frontend:
+    name: Frontend (lint, typecheck, build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint frontend
+        run: npm run lint:frontend
+
+      - name: Type check frontend (SPA ESM build)
+        run: npm run typecheck:client
+
+      - name: Build frontend (SPA ESM build)
+        run: npm run build:client
+
+  # ========================================================================
+  # CI - integration gates that need services or a cluster-free render.
+  # ========================================================================
   test:
     name: Tests (unit + integration)
     runs-on: ubuntu-latest
-    needs: quality
+    needs: [backend, frontend]
 
     services:
       postgres:
@@ -104,11 +136,10 @@ jobs:
           path: coverage/
           retention-days: 7
 
-  # ---- Prove the production image builds ----
   docker:
     name: Docker image build
     runs-on: ubuntu-latest
-    needs: quality
+    needs: [backend, frontend]
     steps:
       - uses: actions/checkout@v4
 
@@ -129,14 +160,16 @@ jobs:
             -e "require('fs').accessSync('dist/apps/auth-server/main.js'); \
                 require('fs').accessSync('dist/apps/api-gateway/main.js'); \
                 require('fs').accessSync('dist/apps/resource-api/main.js'); \
+                require('fs').accessSync('dist/apps/frontend/main.js'); \
+                require('fs').accessSync('dist/apps/frontend/static/app/main.js'); \
+                require('fs').accessSync('dist/apps/frontend/static/index.html'); \
                 require('fs').accessSync('migrations'); \
                 console.log('image artifacts OK')"
 
-  # ---- Helm chart: no cluster required, pure template rendering ----
   chart:
     name: Helm lint & render
     runs-on: ubuntu-latest
-    needs: quality
+    needs: [backend, frontend]
     steps:
       - uses: actions/checkout@v4
 
@@ -158,4 +191,134 @@ jobs:
           grep -q 'kind: Ingress' /tmp/identity-rendered.yaml
           grep -q 'kind: Job' /tmp/identity-rendered.yaml
           grep -q 'identity.local' /tmp/identity-rendered.yaml
+          echo "--- frontend app rendered ---"
+          grep -q 'name: frontend' /tmp/identity-rendered.yaml
+          grep -q 'dist/apps/frontend/main.js' /tmp/identity-rendered.yaml
           echo "all expected resources render OK"
+
+  # ========================================================================
+  # CD - deploy to minikube, only on push to main (never on PRs). Runs on a
+  # self-hosted runner that has Docker + minikube + helm + kubectl on PATH.
+  # ========================================================================
+  deploy:
+    name: Deploy to minikube (self-hosted)
+    runs-on: self-hosted
+    needs: [test, docker, chart]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check prerequisites
+        shell: powershell
+        run: |
+          $tools = 'minikube', 'docker', 'helm', 'kubectl'
+          foreach ($tool in $tools) {
+            if (-not (Get-Command $tool -ErrorAction SilentlyContinue)) {
+              Write-Error "$tool missing on the self-hosted runner PATH"
+              exit 1
+            }
+          }
+          docker info --format '{{.ServerVersion}}' | Out-Null
+          if (-not $?) {
+            Write-Error 'Docker is not running - start Docker Desktop and retry'
+            exit 1
+          }
+          Write-Output 'prerequisites OK'
+
+      - name: Ensure minikube is running
+        shell: powershell
+        run: |
+          minikube status --wait=apiserver 2>$null | Out-Null
+          if (-not $?) {
+            minikube start --driver=docker --wait=all
+            if (-not $?) { exit 1 }
+          }
+          minikube addons enable ingress
+          if (-not $?) { exit 1 }
+          kubectl config current-context
+
+      - name: Build and load image into minikube
+        shell: powershell
+        run: |
+          docker build -t "identity-platform:$env:IMAGE_TAG" .
+          if (-not $?) { exit 1 }
+          minikube image load "identity-platform:$env:IMAGE_TAG"
+          if (-not $?) { exit 1 }
+
+      - name: Install or upgrade stack
+        shell: powershell
+        run: |
+          $setArgs = @('--set', "image.tag=$env:IMAGE_TAG")
+          helm upgrade --install identity-platform deploy/helm/identity-platform @setArgs --wait --timeout 15m
+          if (-not $?) { exit 1 }
+
+      - name: Pod status
+        if: always()
+        shell: powershell
+        run: |
+          kubectl get pods
+          kubectl get pvc
+
+    env:
+      IMAGE_TAG: main-${{ github.sha }}
+
+  # ========================================================================
+  # CD - audit-grade deployment report, uploaded as an artifact and published
+  # to the run summary. Runs on any completed deploy (success or failure).
+  # ========================================================================
+  report:
+    name: Generate deployment report
+    runs-on: ubuntu-latest
+    needs: deploy
+    if: always() && github.ref == 'refs/heads/main' && github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+
+      - name: Build report (rendered chart + git facts)
+        shell: bash
+        run: |
+          mkdir -p "$DEPLOY_DIR"
+          helm template identity-platform deploy/helm/identity-platform \
+            --namespace identity --set "image.tag=main-${{ github.sha }}" \
+            > "$DEPLOY_DIR/rendered.yaml"
+          {
+            echo "# Identity Platform - deployment report"
+            echo
+            echo "- Workflow: \`${{ github.workflow }}\`"
+            echo "- Commit: \`${{ github.sha }}\`"
+            echo "- Branch: \`${{ github.ref_name }}\`"
+            echo "- Run: [${{ github.run_id }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+            echo "- Image tag: \`main-${{ github.sha }}\`"
+            echo "- Deploy job result: \`${{ needs.deploy.result }}\`"
+            echo "- Timestamp: \`UTC $(date -u +'%Y-%m-%d %H:%M:%S')\`"
+            echo
+            echo "## Resources this deploy applies"
+            echo
+            echo '```yaml'
+            cat "$DEPLOY_DIR/rendered.yaml"
+            echo '```'
+            echo
+            echo "## Verification"
+            echo
+            echo "Run \`scripts/verify-all.ps1\` against the live cluster to execute the 28 end-to-end checks."
+          } > "$DEPLOY_DIR/report.md"
+
+      - name: Upload deployment report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: identity-deploy-report
+          path: ${{ env.DEPLOY_DIR }}
+          retention-days: 30
+
+      - name: Publish report to job summary
+        if: always()
+        shell: bash
+        run: |
+          cat "$DEPLOY_DIR/report.md" >> "$GITHUB_STEP_SUMMARY"
+
+    env:
+      DEPLOY_DIR: ${{ runner.temp }}/identity-deploy-report

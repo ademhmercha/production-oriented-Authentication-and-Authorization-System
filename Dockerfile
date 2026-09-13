@@ -5,7 +5,7 @@ FROM node:20-alpine AS build
 WORKDIR /app
 COPY package*.json ./
 RUN npm ci
-COPY tsconfig.json tsconfig.build.json ./
+COPY tsconfig.json tsconfig.build.json tsconfig.client.json ./
 COPY src ./src
 RUN npm run build
 
@@ -27,6 +27,6 @@ RUN mkdir -p /app/keys && chown -R node:node /app
 VOLUME ["/app/keys"]
 
 USER node
-EXPOSE 3000 3001 3002
+EXPOSE 3000 3001 3002 8080
 
 CMD ["node", "dist/apps/auth-server/main.js"]

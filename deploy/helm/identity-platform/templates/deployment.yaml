@@ -21,8 +21,9 @@ spec:
     spec:
       {{- if $app.keysVolume }}
       securityContext:
-        fsGroup: 1000
+        runAsUser: 1000
         runAsNonRoot: true
+        fsGroup: 1000
       {{- end }}
       containers:
         - name: {{ $name }}
@@ -40,6 +41,10 @@ spec:
           env:
             - name: DATABASE_URL
               value: {{ $.Values.databaseUrl | default (printf "postgres://identity:$(POSTGRES_PASSWORD)@%s-postgres:5432/identity" (include "identity-platform.fullname" $)) }}
+            {{- range $k, $v := $app.env }}
+            - name: {{ $k }}
+              value: {{ $v | quote }}
+            {{- end }}
           livenessProbe:
             httpGet:
               path: {{ $app.livenessProbe.path }}

@@ -5,6 +5,9 @@ node_modules/
 dist/
 coverage/
 
+# Generated frontend client bundle (produced by npm run build:client)
+src/apps/frontend/static/app/
+
 # Environment - never commit real secrets
 .env
 .env.local

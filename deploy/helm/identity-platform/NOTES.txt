@@ -10,10 +10,17 @@ is generated during install):
   kubectl logs jobs/identity-platform-seed
 
 Reach the services
-  minikube tunnel        # ingress: http://identity.local (add to /etc/hosts)
+  minikube tunnel        # SPA: http://identity.local (add to /etc/hosts)
   kubectl port-forward svc/identity-platform-api-gateway 3000:3000
   kubectl port-forward svc/identity-platform-mailhog 8025:8025
   kubectl port-forward svc/identity-platform-auth-server 3001:3001
+
+Edge TLS
+  The chart serves plain HTTP by default so browsers do not fight an
+  untrusted https://identity.local (the SPA disables
+  upgrade-insecure-requests/HSTS accordingly). To terminate TLS at the
+  ingress, create a Secret with tls.crt/tls.key covering the host and set
+    --set ingress.tls.enabled=true --set ingress.tls.secretName=my-tls
 
 Operational constraints
   - auth-server runs at 1 replica: signing keys are files on a PVC
@@ -23,6 +30,11 @@ Operational constraints
     generated on first install and reused on upgrade - they never rotate.
   - Migrations run as a pre-install/pre-upgrade hook job; seed runs on
     install only.
+  - Hook ordering (weights): postgres Service/StatefulSet (-110/-100),
+    config + secret (-10), migrate (1), seed (2). Postgres, the ConfigMap
+    and the Secret are hook resources so the migrate/seed jobs can consume
+    them before the regular workloads exist. During an upgrade they are
+    deleted and recreated (data on PVCs is preserved).
 
 Upgrading with new values
   helm upgrade identity-platform deploy/helm/identity-platform \

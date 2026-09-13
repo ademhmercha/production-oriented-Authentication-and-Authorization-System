@@ -54,6 +54,14 @@ deploy/helm/identity-platform/
    - `seed`: `pre-install` only (weight 2), so upgrades never re-seed the admin.
    - Both run with `MIGRATIONS_DIR=/app/migrations` (image already copies
      migrations there).
+   - **Pre-hooks make them runnable**: pre-install hooks execute before the
+     chart's regular resources exist, so the postgres headless Service + 
+     StatefulSet (weights -110/-100) and the ConfigMap + Secret (weight -10)
+     are also hook resources (all `pre-install,pre-upgrade`, recreated on
+     upgrade with `before-hook-creation`). Postgres data survives via PVC;
+     the Secret keeps its values through `lookup`.
+   - `runAsUser: 1000` is set explicitly on pods with `fsGroup` — the kubelet
+     rejects `runAsNonRoot` when the image user is a non-numeric name (`node`).
 3. **Secrets generated once, stable across upgrades** — secret.yaml uses
    `lookup` to reuse existing secret data; fresh values only on first install.
    - `KMS_MASTER_KEY` = `randBytes 32 | b64enc` (matches the app's 32-byte

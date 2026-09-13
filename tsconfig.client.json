@@ -1,0 +1,22 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "outDir": "src/apps/frontend/static/app",
+    "rootDir": "src/apps/frontend/client",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "noEmitOnError": true,
+    "declaration": false,
+    "sourceMap": false,
+    "noUnusedLocals": false,
+    "noImplicitOverride": true,
+    "useDefineForClassFields": true,
+    "types": []
+  },
+  "include": ["src/apps/frontend/client/**/*.ts"]
+}

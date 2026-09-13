@@ -11,10 +11,25 @@ metadata:
   {{- end }}
 spec:
   ingressClassName: {{ .Values.ingress.className | quote }}
+  {{- with .Values.ingress.tls }}
+  {{- if .enabled }}
+  tls:
+    - hosts:
+        - {{ $.Values.ingress.host | quote }}
+      secretName: {{ .secretName | quote }}
+  {{- end }}
+  {{- end }}
   rules:
     - host: {{ .Values.ingress.host | quote }}
       http:
         paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ printf "%s-frontend" (include "identity-platform.fullname" .) }}
+                port:
+                  number: 8080
           - path: /api
             pathType: Prefix
             backend:
@@ -30,6 +45,20 @@ spec:
                 port:
                   number: 3000
           - path: /docs
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ printf "%s-auth-server" (include "identity-platform.fullname" .) }}
+                port:
+                  number: 3001
+          - path: /auth
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ printf "%s-auth-server" (include "identity-platform.fullname" .) }}
+                port:
+                  number: 3001
+          - path: /mfa
             pathType: Prefix
             backend:
               service:

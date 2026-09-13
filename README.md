@@ -11,42 +11,49 @@ zero-trust API gateway — no third-party IdP.
 ## Architecture
 
 ```
-                        +--------------------+
-   clients ----------> |    api-gateway     |  verifies JWTs against JWKS,
-        :3000          |      (:3000)       |  enforces scopes, strips/injects
-                        +---------+----------+  identity headers
-               +------------------+------------------+
-               v                                     v
-    +--------------------+               +--------------------+
-    |    auth-server     |               |    resource-api    |
-    |      (:3001)       |               |      (:3002)       |
-    | authn + oauth2 +   |               |  zero-trust API:   |
-    | mfa + rbac + admin |               |  trusts NO caller  |
-    +---------+----------+               |  directly          |
-              v                          +--------------------+
-    +---------+----+   +-------+
-    |   postgres   |  | redis |  sessions - rate limits - MFA challenges
-    |    (:5432)   |   |(:6379)|  risk signals - jti denylist
-    +--------------+   +-------+
+                          +--------------------+   +--------------------+
+    browser ----------->  |    api-gateway     |   |     frontend       |  SPA (vanilla TS+CSS)
+        SPA    :8080      |      (:3000)       |   |      (:8080)       |
+                          +---------+----------+   +---------+----------+
+                                     |                          |
+                          verifies JWTs against JWKS,    /auth,/mfa,/api,/docs
+                          enforces scopes, strips/injects routed same-origin
+                          identity headers                      |
+                          +------------------+------------------+
+                          v                                     v
+                  +--------------------+               +--------------------+
+                  |    auth-server     |               |    resource-api    |
+                  |      (:3001)       |               |      (:3002)       |
+                  | authn + oauth2 +   |               |  zero-trust API:   |
+                  | mfa + rbac + admin |               |  trusts NO caller  |
+                  +---------+----------+               |  directly          |
+                            v                          +--------------------+
+                  +---------+----+   +-------+
+                  |   postgres   |  | redis |  sessions - rate limits - MFA challenges
+                  |    (:5432)   |   |(:6379)|  risk signals - jti denylist
+                  +--------------+   +-------+
 ```
 
 **How a request flows:**
 
-1. **Login/identity** — everything identity-related lives in `auth-server`: registration +
+1. **Browser SPA** — the `frontend` service (port 8080) serves a bundler-free
+   TypeScript SPA (login, register, TOTP MFA, password reset, account view). It talks
+   exclusively to the auth-server and the api-gateway through one origin.
+2. **Login/identity** — everything identity-related lives in `auth-server`: registration +
    email verification, login (Argon2id), lockout, password reset, MFA enrollment and
    challenges, role assignment. Successful auth issues an **access token (Ed25519 JWT)**
    plus a **refresh token** bound to a server-side session.
-2. **Edge verification** — `api-gateway` never shares signing keys with anyone. It fetches
+3. **Edge verification** — `api-gateway` never shares signing keys with anyone. It fetches
    public keys from the auth-server's **JWKS endpoint** (`/.well-known/jwks.json`) and
    verifies signature, issuer, audience and revocation (Redis jti denylist) itself.
-3. **Zero trust downstream** — the gateway **strips** any inbound `X-User-*` headers
+4. **Zero trust downstream** — the gateway **strips** any inbound `X-User-*` headers
    (spoofing is impossible) and re-injects only verified claims (`X-User-Id`,
    `X-User-Scopes`, `X-User-Roles`, `X-Token-Sid`). It also proves its own origin to
    internal services with a shared secret.
-4. **Resource APIs** — `resource-api` accepts requests *only* via the gateway (origin
+5. **Resource APIs** — `resource-api` accepts requests *only* via the gateway (origin
    secret + verified identity headers) and enforces scope-based authorization per route
    plus row-level ownership (users see only their data).
-5. **State** — Postgres is the source of truth (users, clients, codes, refresh chains,
+6. **State** — Postgres is the source of truth (users, clients, codes, refresh chains,
    audit log); Redis holds ephemeral state: sessions cache, rate-limit windows, MFA
    challenges, risk signals and the token-revocation denylist.
 
@@ -75,6 +82,7 @@ node -e "console.log('GATEWAY_SHARED_SECRET='+require('crypto').randomBytes(32).
 
 docker compose up -d --build     # migrations + seeds run automatically
 
+# frontend    http://localhost:8080 (SPA)
 # auth-server http://localhost:3001 (Swagger at /docs)
 # gateway     http://localhost:3000 (/api/v1)
 # MailHog     http://localhost:8025
@@ -97,10 +105,11 @@ managed KMS/Vault, SIEM shipping of audit events.
 ## Deploy with Helm (local, free)
 
 The [Helm chart](deploy/helm/identity-platform) (`identity-platform`) deploys the whole
-stack on minikube with zero cloud cost: auth-server, api-gateway, resource-api, plus
-bundled Postgres, Redis, MailHog, an nginx Ingress, and migrate/seed hook Jobs. Secrets
-(`KMS_MASTER_KEY`, `GATEWAY_SHARED_SECRET`, `POSTGRES_PASSWORD`) are generated once and
-reused across upgrades; migrations run on `pre-install`/`pre-upgrade`.
+stack on minikube with zero cloud cost: **frontend**, auth-server, api-gateway,
+resource-api, plus bundled Postgres, Redis, MailHog, an nginx Ingress, and
+migrate/seed hook Jobs. Secrets (`KMS_MASTER_KEY`, `GATEWAY_SHARED_SECRET`,
+`POSTGRES_PASSWORD`) are generated once and reused across upgrades; migrations run on
+`pre-install`/`pre-upgrade`.
 
 Plan: [`docs/plan-helm-k8s.md`](docs/plan-helm-k8s.md).
 
@@ -116,17 +125,31 @@ helm upgrade --install identity-platform deploy/helm/identity-platform --wait --
 minikube tunnel   # ingress: http://identity.local (add "127.0.0.1 identity.local" to hosts)
 ```
 
+> **HTTPS note:** the chart serves plain HTTP by default (`ingress.tls.enabled: false`).
+> The SPA disables `upgrade-insecure-requests`/HSTS so browsers don't force an
+> untrusted `https://identity.local`. To enable edge TLS, set
+> `--set ingress.tls.enabled=true --set ingress.tls.secretName=<tls-secret>` (the secret
+> must contain `tls.crt`/`tls.key` covering the host).
+
+- SPA: `http://identity.local` · Swagger docs: `http://identity.local/docs` · admin UI: `http://identity.local/admin`
 - API gateway: `http://identity.local/api/v1` (health `http://identity.local/healthz`)
-- Swagger docs: `http://identity.local/docs` · admin UI: `http://identity.local/admin`
 - MailHog: `kubectl port-forward svc/identity-platform-mailhog 8025:8025`
 - Seeded admin: `admin@auth.local`; the one-time password is printed by the seed Job:
   `kubectl logs jobs/identity-platform-seed` (set `seeds.adminPassword` to pin it)
 - Scale limits: auth-server runs at **1 replica** because signing keys live on a PVC.
 
-### Self-hosted runner deploy workflow
+### CI/CD (one workflow)
 
-[`.github/workflows/deploy-minikube.yml`](.github/workflows/deploy-minikube.yml) runs a
-manual (`workflow_dispatch`) deploy from the repo's **Actions** tab onto a self-hosted
-machine that has Docker + minikube + helm + kubectl on PATH. It is never wired to push/PR
-events, so arbitrary PR code cannot reach the runner. Inputs: `action` (apply/destroy),
-`image_tag`, `admin_password`.
+GitHub Actions in a single workflow — [`.github/workflows/ci.yml`](.github/workflows/ci.yml):
+
+- **CI** runs on every push to `main` and on PRs. `backend` and `frontend` jobs run in
+  **parallel** (each: lint → typecheck → build) and must pass before `test` (unit +
+  integration against Postgres/Redis, with coverage upload), `docker` (image build +
+  entrypoint smoke test) and `chart` (helm lint + render + grep asserts) are allowed to run.
+- **CD** — a `deploy` job runs *only* on push to `main` (never on PRs, so arbitrary PR
+  code cannot reach the self-hosted runner). Once all CI gates pass it builds the image,
+  loads it into minikube and runs `helm upgrade --install`. A `report` job then uploads
+  an audit-grade deployment report (rendered chart + git facts) as an artifact and to the
+  run summary.
+- The `deploy` job needs a **self-hosted runner** with Docker + minikube + helm + kubectl
+  on PATH (the runner on which minikube lives).

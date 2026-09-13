@@ -5,7 +5,7 @@ image:
   tag: local
   pullPolicy: IfNotPresent
 
-# One image, three entrypoints - same split the docker-compose stack uses.
+# One image, four entrypoints - same split the docker-compose stack uses.
 apps:
   auth-server:
     replicaCount: 1
@@ -34,6 +34,20 @@ apps:
       path: /health
     readinessProbe:
       path: /health
+  frontend:
+    replicaCount: 1
+    command: ["node", "dist/apps/frontend/main.js"]
+    port: 8080
+    keysVolume: false
+    # Base URLs advertised in /config.js. Empty = same origin served by the
+    # ingress (which routes /auth, /mfa, /api and /docs to the right backend).
+    env:
+      PUBLIC_AUTH_BASE: ""
+      PUBLIC_API_BASE: ""
+    livenessProbe:
+      path: /healthz
+    readinessProbe:
+      path: /healthz
 
 resources:
   requests:
@@ -112,3 +126,10 @@ ingress:
   className: nginx
   host: identity.local
   annotations: {}
+  # Edge TLS: point secretName at a TLS Secret (cert+key) and set enabled.
+  # Certificates must cover the host above. When disabled the SPA is served
+  # over plain HTTP - the frontend disables HSTS/upgrade-insecure-requests so
+  # browsers don't force https against an untrusted cert.
+  tls:
+    enabled: false
+    secretName: identity-platform-tls
