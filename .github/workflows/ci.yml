@@ -279,6 +279,8 @@ jobs:
 
       - name: Build report (rendered chart + git facts)
         shell: bash
+        env:
+          DEPLOY_DIR: ${{ runner.temp }}/identity-deploy-report
         run: |
           mkdir -p "$DEPLOY_DIR"
           helm template identity-platform deploy/helm/identity-platform \
@@ -309,6 +311,8 @@ jobs:
       - name: Upload deployment report
         if: always()
         uses: actions/upload-artifact@v4
+        env:
+          DEPLOY_DIR: ${{ runner.temp }}/identity-deploy-report
         with:
           name: identity-deploy-report
           path: ${{ env.DEPLOY_DIR }}
@@ -317,8 +321,7 @@ jobs:
       - name: Publish report to job summary
         if: always()
         shell: bash
+        env:
+          DEPLOY_DIR: ${{ runner.temp }}/identity-deploy-report
         run: |
           cat "$DEPLOY_DIR/report.md" >> "$GITHUB_STEP_SUMMARY"
-
-    env:
-      DEPLOY_DIR: ${{ runner.temp }}/identity-deploy-report
