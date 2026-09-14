@@ -228,14 +228,27 @@ jobs:
       - name: Ensure minikube is running
         shell: powershell
         run: |
-          minikube status --wait=apiserver 2>$null | Out-Null
-          if (-not $?) {
+          minikube status --format='{{.Host}};{{.Kubelet}};{{.APIServer}}' | Out-Null
+          if ($LASTEXITCODE -eq 0) {
+            Write-Output 'minikube already running'
+          } else {
+            Write-Output 'minikube not running, starting it'
             minikube start --driver=docker --wait=all
-            if (-not $?) { exit 1 }
+            if ($LASTEXITCODE -ne 0) {
+              Write-Error "minikube start failed (exit code $LASTEXITCODE)"
+              exit 1
+            }
           }
-          minikube addons enable ingress
-          if (-not $?) { exit 1 }
-          kubectl config current-context
+          minikube addons enable ingress 2>$null
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "minikube addons enable ingress failed (exit code $LASTEXITCODE)"
+            exit 1
+          }
+          kubectl config current-context | Out-Null
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error 'kubectl is not configured to reach the cluster'
+            exit 1
+          }
 
       - name: Build and load image into minikube
         shell: powershell
