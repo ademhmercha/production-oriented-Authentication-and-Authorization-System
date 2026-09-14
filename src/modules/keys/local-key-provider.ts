@@ -41,6 +41,7 @@ const ENVELOPE_VERSION = 1;
 export class LocalKeyProvider implements KeyManagementService {
   private readonly keyDir: string;
   private masterKeyCache?: Buffer;
+  private rotateSeq = 0;
 
   constructor(keyDir: string) {
     this.keyDir = keyDir;
@@ -158,7 +159,7 @@ export class LocalKeyProvider implements KeyManagementService {
     return readdirSync(this.keyDir)
       .filter((f) => f.startsWith('signing-') && f.endsWith('.json'))
       .map((f) => JSON.parse(readFileSync(join(this.keyDir, f), 'utf8')) as WrappedSigningKeyFile)
-      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.kid.localeCompare(a.kid));
   }
 
   async getCurrentSigningKey(): Promise<{ kid: string; privateKeyPem: string; publicKeyPem: string }> {
@@ -195,7 +196,7 @@ export class LocalKeyProvider implements KeyManagementService {
         publicKeyPem: f.publicKeyPem,
         createdAt: new Date(f.createdAt),
       }))
-      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime() || b.kid.localeCompare(a.kid));
   }
 
   async rotateSigningKey(): Promise<{ kid: string }> {
@@ -210,7 +211,7 @@ export class LocalKeyProvider implements KeyManagementService {
     const file: WrappedSigningKeyFile = {
       kid,
       alg: 'EdDSA',
-      createdAt: new Date().toISOString(),
+      createdAt: new Date(Date.now() + this.rotateSeq++).toISOString(),
       publicKeyPem,
       wrappedPrivateKey: this.wrapPrivateKey(privateKeyPem),
     };
